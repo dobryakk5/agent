@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenClaw Admin</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;700;800&display=swap');
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --card: #16161f;
+    --border: #1e1e2e;
+    --accent: #7c5cfc;
+    --accent2: #00e5b4;
+    --danger: #ff4d6d;
+    --warn: #ffa94d;
+    --text: #e0e0f0;
+    --muted: #5a5a7a;
+    --peak: #ff4d6d;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(124,92,252,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(124,92,252,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrap {
+    position: relative;
+    z-index: 1;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 24px 60px;
+  }
+
+  /* Header */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 32px 0 40px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 40px;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-icon {
+    width: 36px;
+    height: 36px;
+    background: var(--accent);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+  }
+
+  .logo-text {
+    font-family: 'Syne', sans-serif;
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+  }
+
+  .logo-text span { color: var(--accent); }
+
+  .header-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent2);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* Section title */
+  .section-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 16px;
+  }
+
+  /* Provision form */
+  .provision-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 40px;
+  }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr auto;
+    gap: 12px;
+    align-items: end;
+  }
+
+  .field label {
+    display: block;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 6px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  .field input {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .field input:focus {
+    border-color: var(--accent);
+  }
+
+  .field input::placeholder { color: var(--muted); }
+
+  .btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .btn-primary:hover { background: #6a4de0; transform: translateY(-1px); }
+
+  .btn-stop {
+    background: transparent;
+    color: var(--danger);
+    border: 1px solid var(--danger);
+    padding: 6px 12px;
+    font-size: 11px;
+  }
+
+  .btn-stop:hover { background: rgba(255,77,109,0.1); }
+
+  .btn-remove {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    padding: 6px 12px;
+    font-size: 11px;
+  }
+
+  .btn-remove:hover { color: var(--danger); border-color: var(--danger); }
+
+  /* Instances table */
+  .table-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 40px;
+  }
+
+  table { width: 100%; border-collapse: collapse; }
+
+  th {
+    background: var(--surface);
+    padding: 12px 16px;
+    text-align: left;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+
+  td {
+    padding: 14px 16px;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+    vertical-align: middle;
+  }
+
+  tr:hover td { background: rgba(124,92,252,0.04); }
+
+  .badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .badge-running { background: rgba(0,229,180,0.15); color: var(--accent2); }
+  .badge-stopped { background: rgba(255,77,109,0.12); color: var(--danger); }
+  .badge-creating { background: rgba(255,169,77,0.12); color: var(--warn); }
+
+  .actions { display: flex; gap: 8px; }
+
+  /* Metrics section */
+  .metrics-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .metrics-select {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  .chart-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+
+  .chart-title {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .peak-label {
+    font-size: 11px;
+    color: var(--peak);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  canvas { width: 100% !important; }
+
+  /* Stats row */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .stat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+  }
+
+  .stat-label {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .stat-value {
+    font-family: 'Syne', sans-serif;
+    font-size: 24px;
+    font-weight: 800;
+    color: var(--text);
+  }
+
+  .stat-value.accent { color: var(--accent); }
+  .stat-value.green { color: var(--accent2); }
+  .stat-value.warn { color: var(--warn); }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 20px;
+    font-size: 13px;
+    z-index: 100;
+    transform: translateY(80px);
+    opacity: 0;
+    transition: all 0.3s;
+    max-width: 320px;
+  }
+
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.success { border-left: 3px solid var(--accent2); }
+  .toast.error { border-left: 3px solid var(--danger); }
+
+  .empty {
+    text-align: center;
+    padding: 40px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  /* Loader */
+  .loader {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (max-width: 768px) {
+    .form-row { grid-template-columns: 1fr; }
+    .metrics-grid { grid-template-columns: 1fr; }
+    .stats-row { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="logo">
+      <div class="logo-icon">🦞</div>
+      <div class="logo-text">Open<span>Claw</span> Admin</div>
+    </div>
+    <div class="header-status">
+      <div class="dot"></div>
+      <span id="api-status">connecting...</span>
+    </div>
+  </header>
+
+  <!-- Stats row -->
+  <div class="stats-row" id="stats-row">
+    <div class="stat-card">
+      <div class="stat-label">Total instances</div>
+      <div class="stat-value accent" id="stat-total">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Running</div>
+      <div class="stat-value green" id="stat-running">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Stopped</div>
+      <div class="stat-value warn" id="stat-stopped">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Avg CPU %</div>
+      <div class="stat-value" id="stat-cpu">—</div>
+    </div>
+  </div>
+
+  <!-- Provision form -->
+  <div class="section-title">Новый инстанс</div>
+  <div class="provision-card">
+    <div class="form-row">
+      <div class="field">
+        <label>User ID</label>
+        <input id="f-uid" type="number" placeholder="42" />
+      </div>
+      <div class="field">
+        <label>Anthropic API Key</label>
+        <input id="f-key" type="password" placeholder="sk-ant-..." />
+      </div>
+      <div class="field">
+        <label>Telegram Bot Token</label>
+        <input id="f-tg" type="password" placeholder="7123...:AAF..." />
+      </div>
+      <button class="btn btn-primary" onclick="provision()">▶ Запустить</button>
+    </div>
+  </div>
+
+  <!-- Instances -->
+  <div class="section-title">Инстансы</div>
+  <div class="table-card">
+    <table>
+      <thead>
+        <tr>
+          <th>User ID</th>
+          <th>Container</th>
+          <th>Status</th>
+          <th>Telegram</th>
+          <th>Создан</th>
+          <th>Действия</th>
+        </tr>
+      </thead>
+      <tbody id="instances-tbody">
+        <tr><td colspan="6" class="empty">Загрузка...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Metrics -->
+  <div class="metrics-header">
+    <div class="section-title" style="margin:0">Метрики</div>
+    <select class="metrics-select" id="metrics-uid" onchange="loadMetrics()">
+      <option value="">— выбери user_id —</option>
+    </select>
+    <button class="btn btn-primary" style="padding:8px 14px;font-size:12px" onclick="loadMetrics()">Обновить</button>
+  </div>
+
+  <div class="metrics-grid">
+    <div class="chart-card">
+      <div class="chart-title">
+        CPU %
+        <div class="peak-label" id="cpu-peak"></div>
+      </div>
+      <canvas id="cpu-chart"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">
+        RAM (MB)
+        <div class="peak-label" id="mem-peak"></div>
+      </div>
+      <canvas id="mem-chart"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Net RX (MB)</div>
+      <canvas id="netrx-chart"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Net TX (MB)</div>
+      <canvas id="nettx-chart"></canvas>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = ''; // тот же хост, если dashboard отдаётся через FastAPI static
+
+let charts = {};
+
+function toast(msg, type = 'success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast ${type} show`;
+  setTimeout(() => t.className = 'toast', 3000);
+}
+
+async function api(path, opts = {}) {
+  const r = await fetch(API + path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail || r.statusText);
+  }
+  return r.json();
+}
+
+async function loadInstances() {
+  try {
+    const data = await api('/instances');
+    document.getElementById('api-status').textContent = 'online';
+
+    // Stats
+    const running = data.filter(i => i.status === 'running').length;
+    const stopped = data.filter(i => i.status === 'stopped').length;
+    document.getElementById('stat-total').textContent = data.length;
+    document.getElementById('stat-running').textContent = running;
+    document.getElementById('stat-stopped').textContent = stopped;
+
+    // Update select
+    const sel = document.getElementById('metrics-uid');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— выбери user_id —</option>' +
+      data.map(i => `<option value="${i.user_id}">${i.user_id} (${i.status})</option>`).join('');
+    if (cur) sel.value = cur;
+
+    // Table
+    const tbody = document.getElementById('instances-tbody');
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">Нет инстансов</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.map(i => {
+      const badgeClass = { running: 'badge-running', stopped: 'badge-stopped', creating: 'badge-creating' }[i.status] || 'badge-stopped';
+      const tgShort = i.telegram_bot ? i.telegram_bot.split(':')[0] + ':***' : '—';
+      const date = new Date(i.created_at).toLocaleString('ru');
+      return `<tr>
+        <td>${i.user_id}</td>
+        <td style="color:var(--muted);font-size:12px">${i.container_name}</td>
+        <td><span class="badge ${badgeClass}">${i.status}</span></td>
+        <td style="color:var(--muted);font-size:11px">${tgShort}</td>
+        <td style="color:var(--muted);font-size:11px">${date}</td>
+        <td>
+          <div class="actions">
+            ${i.status === 'running' ? `<button class="btn btn-stop" onclick="stop(${i.user_id})">⏹ Стоп</button>` : ''}
+            <button class="btn btn-remove" onclick="remove(${i.user_id})">✕ Удалить</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    document.getElementById('api-status').textContent = 'offline';
+    console.error(e);
+  }
+}
+
+async function provision() {
+  const uid = +document.getElementById('f-uid').value;
+  const key = document.getElementById('f-key').value.trim();
+  const tg = document.getElementById('f-tg').value.trim();
+  if (!uid || !key || !tg) return toast('Заполни все поля', 'error');
+
+  try {
+    await api('/provision', {
+      method: 'POST',
+      body: JSON.stringify({ user_id: uid, api_key: key, telegram_bot_token: tg })
+    });
+    toast(`Инстанс ${uid} запущен`);
+    loadInstances();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function stop(uid) {
+  try {
+    await api(`/stop/${uid}`, { method: 'POST' });
+    toast(`Инстанс ${uid} остановлен`);
+    loadInstances();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function remove(uid) {
+  if (!confirm(`Удалить инстанс ${uid}? Данные тоже удалятся.`)) return;
+  try {
+    await api(`/remove/${uid}`, { method: 'DELETE' });
+    toast(`Инстанс ${uid} удалён`);
+    loadInstances();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function makeChart(id, label, color, peakColor) {
+  if (charts[id]) charts[id].destroy();
+  const ctx = document.getElementById(id).getContext('2d');
+  charts[id] = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        label,
+        data: [],
+        borderColor: color,
+        backgroundColor: color + '18',
+        borderWidth: 2,
+        pointRadius: 3,
+        pointBackgroundColor: [],
+        tension: 0.3,
+        fill: true,
+      }]
+    },
+    options: {
+      responsive: true,
+      animation: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          ticks: { color: '#5a5a7a', font: { family: 'JetBrains Mono', size: 10 }, maxTicksLimit: 8 },
+          grid: { color: '#1e1e2e' }
+        },
+        y: {
+          ticks: { color: '#5a5a7a', font: { family: 'JetBrains Mono', size: 10 } },
+          grid: { color: '#1e1e2e' },
+          beginAtZero: true
+        }
+      }
+    }
+  });
+  return charts[id];
+}
+
+function updateChart(chartId, labels, values, peakLabelId) {
+  const chart = charts[chartId];
+  if (!chart) return;
+  const max = Math.max(...values);
+  const pointColors = values.map(v => v === max && max > 0 ? '#ff4d6d' : chart.data.datasets[0].borderColor);
+  chart.data.labels = labels;
+  chart.data.datasets[0].data = values;
+  chart.data.datasets[0].pointBackgroundColor = pointColors;
+  chart.update();
+
+  if (peakLabelId && max > 0) {
+    document.getElementById(peakLabelId).innerHTML = `▲ Пик: <strong>${max.toFixed(2)}</strong>`;
+  }
+}
+
+async function loadMetrics() {
+  const uid = document.getElementById('metrics-uid').value;
+  if (!uid) return;
+
+  // Init charts if needed
+  if (!charts['cpu-chart']) {
+    makeChart('cpu-chart', 'CPU %', '#7c5cfc');
+    makeChart('mem-chart', 'RAM MB', '#00e5b4');
+    makeChart('netrx-chart', 'RX MB', '#ffa94d');
+    makeChart('nettx-chart', 'TX MB', '#74c0fc');
+  }
+
+  try {
+    const data = await api(`/metrics/${uid}`);
+    if (!data.length) { toast('Нет данных', 'error'); return; }
+
+    const rows = [...data].reverse();
+    const labels = rows.map(r => new Date(r.recorded_at).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' }));
+
+    updateChart('cpu-chart', labels, rows.map(r => r.cpu_percent), 'cpu-peak');
+    updateChart('mem-chart', labels, rows.map(r => r.mem_usage_mb), 'mem-peak');
+    updateChart('netrx-chart', labels, rows.map(r => r.net_rx_mb));
+    updateChart('nettx-chart', labels, rows.map(r => r.net_tx_mb));
+
+    // Avg CPU stat
+    const avgCpu = (rows.reduce((s, r) => s + r.cpu_percent, 0) / rows.length).toFixed(1);
+    document.getElementById('stat-cpu').textContent = avgCpu + '%';
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// Init
+loadInstances();
+setInterval(loadInstances, 15000);
+</script>
+</body>
+</html>
