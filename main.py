@@ -15,6 +15,13 @@ DB_URL = os.environ["DATABASE_URL"]
 
 PLATFORMS = {"anthropic", "openrouter", "openai"}
 
+# Env-переменные по умолчанию для каждой платформы
+PLATFORM_ENV_KEYS = {
+    "anthropic":  "ANTHROPIC_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+    "openai":     "OPENAI_API_KEY",
+}
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -45,6 +52,17 @@ async def provision(req: ProvisionRequest):
     if req.platform not in PLATFORMS:
         raise HTTPException(status_code=400, detail=f"Unknown platform. Use: {PLATFORMS}")
 
+    # Если ключ не передан — берём из .env
+    api_key = req.api_key
+    if not api_key:
+        env_var = PLATFORM_ENV_KEYS[req.platform]
+        api_key = os.environ.get(env_var, "")
+        if not api_key:
+            raise HTTPException(
+                status_code=400,
+                detail=f"API key not provided and {env_var} not set in .env"
+            )
+
     pool = app.state.pool
     existing = await pool.fetchrow(
         "SELECT status FROM user_instances WHERE user_id = $1", req.user_id
@@ -55,7 +73,7 @@ async def provision(req: ProvisionRequest):
     result = create_instance(
         user_id=req.user_id,
         platform=req.platform,
-        api_key=req.api_key,
+        api_key=api_key,
         llm_model=req.llm_model,
         telegram_bot_token=req.telegram_bot_token,
     )
