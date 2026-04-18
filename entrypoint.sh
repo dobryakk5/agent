@@ -47,10 +47,10 @@ cat > "$CONFIG_FILE" << CONF
     }
   },
   "browser": {
-    "enabled": true,
+    "enabled": false,
     "executablePath": "/usr/bin/chromium",
     "headless": true,
-    "args": ["--no-sandbox", "--disable-dev-shm-usage"]
+    "noSandbox": true
   }
 }
 CONF
@@ -81,6 +81,9 @@ You are a personal AI assistant. Your primary goal is to help the user with any 
 
 ## Browser Usage
 - You have access to a real Chromium browser
+- **IMPORTANT:** Before ANY browser action, always run `openclaw browser start` first
+  (the browser is not running by default to save resources)
+- After browser tasks are done, run `openclaw browser stop` to free resources
 - Use it when the user asks to browse, search the web, fill forms, or automate web tasks
 - Always confirm with the user before submitting forms or making purchases
 
