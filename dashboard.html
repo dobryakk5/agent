@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -489,7 +490,7 @@ async function provision() {
   const model = document.getElementById('f-model').value.trim();
   const tg = document.getElementById('f-tg').value.trim();
 
-  if (!uid || !key || !model || !tg) return toast('Заполни все поля', 'error');
+  if (!uid || !model) return toast('Укажи User ID и модель', 'error');
 
   try {
     await api('/provision', {

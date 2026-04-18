@@ -63,6 +63,16 @@ async def provision(req: ProvisionRequest):
                 detail=f"API key not provided and {env_var} not set in .env"
             )
 
+    # Если telegram token не передан — берём из .env
+    telegram_bot_token = req.telegram_bot_token
+    if not telegram_bot_token:
+        telegram_bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+        if not telegram_bot_token:
+            raise HTTPException(
+                status_code=400,
+                detail="Telegram token not provided and TELEGRAM_BOT_TOKEN not set in .env"
+            )
+
     pool = app.state.pool
     existing = await pool.fetchrow(
         "SELECT status FROM user_instances WHERE user_id = $1", req.user_id
@@ -75,7 +85,7 @@ async def provision(req: ProvisionRequest):
         platform=req.platform,
         api_key=api_key,
         llm_model=req.llm_model,
-        telegram_bot_token=req.telegram_bot_token,
+        telegram_bot_token=telegram_bot_token,
     )
 
     await pool.execute(
