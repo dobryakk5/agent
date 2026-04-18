@@ -52,16 +52,11 @@ async def provision(req: ProvisionRequest):
     if existing:
         raise HTTPException(status_code=409, detail="Instance already exists")
 
-    # Убираем префикс платформы из модели если есть (openrouter/nvidia/... -> nvidia/...)
-    llm_model = req.llm_model
-    if llm_model.startswith(req.platform + "/"):
-        llm_model = llm_model[len(req.platform) + 1:]
-
     result = create_instance(
         user_id=req.user_id,
         platform=req.platform,
         api_key=req.api_key,
-        llm_model=llm_model,
+        llm_model=req.llm_model,
         telegram_bot_token=req.telegram_bot_token,
     )
 
@@ -78,7 +73,7 @@ async def provision(req: ProvisionRequest):
         result["volume_name"],
         req.telegram_bot_token,
         req.platform,
-        llm_model,
+        req.llm_model,
     )
 
     return result
