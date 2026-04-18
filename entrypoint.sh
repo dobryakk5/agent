@@ -4,9 +4,6 @@ set -eu
 CONFIG_DIR="/root/.openclaw"
 CONFIG_FILE="$CONFIG_DIR/openclaw.json"
 
-# Один и тот же workspace должен:
-# 1) быть volume в docker_manager.py
-# 2) быть прописан в конфиге OpenClaw
 WORKSPACE="/workspace"
 MEMORY_DIR="$WORKSPACE/memory"
 AGENTS_FILE="$WORKSPACE/AGENTS.md"
@@ -14,13 +11,10 @@ MEMORY_FILE="$WORKSPACE/MEMORY.md"
 
 mkdir -p "$CONFIG_DIR" "$WORKSPACE" "$MEMORY_DIR"
 
-# Валидация обязательных переменных
 : "${PLATFORM:=anthropic}"
 : "${API_KEY:?API_KEY is required}"
 : "${LLM_MODEL:?LLM_MODEL is required}"
-: "${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN is required}"
 
-# Определяем env-переменную для ключа провайдера
 case "$PLATFORM" in
   openrouter)
     ENV_KEY="OPENROUTER_API_KEY"
@@ -33,10 +27,38 @@ case "$PLATFORM" in
     ;;
 esac
 
-# Экспортируем ключ в env процесса
 export "${ENV_KEY}=${API_KEY}"
 
-# Генерируем конфиг
+TG_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
+
+if [ -n "$TG_TOKEN" ]; then
+  TELEGRAM_BLOCK=$(cat <<EOF
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "dmPolicy": "open",
+      "allowFrom": ["*"],
+      "streaming": "partial",
+      "accounts": {
+        "default": {
+          "botToken": "${TG_TOKEN}"
+        }
+      }
+    }
+  },
+EOF
+)
+else
+  TELEGRAM_BLOCK=$(cat <<EOF
+  "channels": {
+    "telegram": {
+      "enabled": false
+    }
+  },
+EOF
+)
+fi
+
 cat > "$CONFIG_FILE" <<CONF
 {
   "gateway": {
@@ -54,19 +76,7 @@ cat > "$CONFIG_FILE" <<CONF
       "timeoutSeconds": 120
     }
   },
-  "channels": {
-    "telegram": {
-      "enabled": true,
-      "dmPolicy": "open",
-      "allowFrom": ["*"],
-      "streaming": "partial",
-      "accounts": {
-        "default": {
-          "botToken": "${TELEGRAM_BOT_TOKEN}"
-        }
-      }
-    }
-  },
+${TELEGRAM_BLOCK}
   "browser": {
     "enabled": false,
     "executablePath": "/usr/bin/chromium",
@@ -79,9 +89,9 @@ CONF
 echo "[entrypoint] Platform: $PLATFORM"
 echo "[entrypoint] Model: $LLM_MODEL"
 echo "[entrypoint] Workspace: $WORKSPACE"
+echo "[entrypoint] Telegram enabled: $( [ -n "$TG_TOKEN" ] && echo yes || echo no )"
 echo "[entrypoint] Config written to $CONFIG_FILE"
 
-# AGENTS.md — только при первом запуске
 if [ ! -f "$AGENTS_FILE" ]; then
 cat > "$AGENTS_FILE" <<'AGENTS'
 # Personal Assistant Instructions
@@ -95,27 +105,24 @@ You are a personal AI assistant. Your primary goal is to help the user with any 
 - Write daily activity logs to memory/YYYY-MM-DD.md.
 
 ## What to Remember
-- User preferences (languages, tools, time zones, communication style)
+- User preferences
 - Ongoing projects and their status
 - Decisions made and why
 - Recurring tasks and schedules
-- Personal context the user shares
+- Important personal context
 
 ## Browser Usage
-- You have access to a real Chromium browser.
-- Before any browser action, start the browser runtime if it is not running.
-- After browser tasks are done, stop it to free resources.
-- Use it when the user asks to browse, search the web, fill forms, or automate web tasks.
-- Always confirm with the user before submitting forms or making purchases.
+- Before browser actions, start the browser runtime if needed.
+- Stop it when done to save resources.
+- Confirm before submitting forms or purchases.
 
 ## Communication Style
 - Be concise and direct in Telegram.
 - Use bullet points for lists.
-- Ask for clarification when a request is ambiguous.
+- Ask for clarification when needed.
 AGENTS
 fi
 
-# MEMORY.md — только при первом запуске
 if [ ! -f "$MEMORY_FILE" ]; then
 cat > "$MEMORY_FILE" <<'MEMORY'
 # Long-term Memory
@@ -130,7 +137,5 @@ cat > "$MEMORY_FILE" <<'MEMORY'
 (will be filled over time)
 MEMORY
 fi
-
-echo "[entrypoint] Starting OpenClaw gateway..."
 
 exec openclaw gateway
