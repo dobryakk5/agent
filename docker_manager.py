@@ -3,6 +3,20 @@ import docker
 client = docker.from_env()
 
 
+def ensure_volume(name: str):
+    try:
+        client.volumes.get(name)
+    except docker.errors.NotFound:
+        client.volumes.create(name=name)
+
+
+def ensure_network(name: str):
+    try:
+        client.networks.get(name)
+    except docker.errors.NotFound:
+        client.networks.create(name=name, driver="bridge")
+
+
 def create_instance(
     user_id: int,
     platform: str,
@@ -14,8 +28,8 @@ def create_instance(
     network_name = f"user_{user_id}_net"
     container_name = f"agent_user_{user_id}"
 
-    client.volumes.create(name=volume_name)
-    client.networks.create(name=network_name, driver="bridge")
+    ensure_volume(volume_name)
+    ensure_network(network_name)
 
     container = client.containers.run(
         image="openclaw-agent:latest",
@@ -45,10 +59,6 @@ def create_instance(
             "retries": 3,
         },
     )
-
-    # Подключаем к bridge для доступа к интернету
-    default_net = client.networks.get("bridge")
-    default_net.connect(container)
 
     return {
         "container_name": container_name,
@@ -75,7 +85,7 @@ def remove_instance(user_id: int):
     try:
         c = client.containers.get(container_name)
         c.stop()
-        c.remove()
+        c.remove(force=True)
     except docker.errors.NotFound:
         pass
 
@@ -99,20 +109,20 @@ def recreate_container(
     llm_model: str,
     telegram_bot_token: str,
 ) -> dict:
-    """Пересоздаёт только контейнер, сохраняя volume и network."""
     volume_name = f"user_{user_id}_data"
     network_name = f"user_{user_id}_net"
     container_name = f"agent_user_{user_id}"
 
-    # Останавливаем и удаляем только контейнер
+    ensure_volume(volume_name)
+    ensure_network(network_name)
+
     try:
         c = client.containers.get(container_name)
         c.stop()
-        c.remove()
+        c.remove(force=True)
     except docker.errors.NotFound:
         pass
 
-    # Создаём новый контейнер с теми же volume и network
     container = client.containers.run(
         image="openclaw-agent:latest",
         name=container_name,
@@ -142,9 +152,6 @@ def recreate_container(
         },
     )
 
-    default_net = client.networks.get("bridge")
-    default_net.connect(container)
-
     return {
         "container_name": container_name,
         "network_name": network_name,
@@ -156,6 +163,7 @@ def recreate_container(
 def get_raw_stats(container_name: str) -> dict | None:
     try:
         c = client.containers.get(container_name)
+        c.reload()
         if c.status != "running":
             return None
         return c.stats(stream=False)
