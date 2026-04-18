@@ -26,6 +26,9 @@ esac
 # Генерируем конфиг
 cat > "$CONFIG_FILE" << CONF
 {
+  "gateway": {
+    "mode": "local"
+  },
   "env": {
     "${ENV_KEY}": "${API_KEY}"
   },
