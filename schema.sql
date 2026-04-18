@@ -5,6 +5,9 @@ CREATE TABLE user_instances (
     network_name   TEXT NOT NULL,
     volume_name    TEXT NOT NULL,
     telegram_bot   TEXT,
+    api_key        TEXT NOT NULL,
+    platform       TEXT NOT NULL DEFAULT 'anthropic',
+    llm_model      TEXT,
     status         TEXT NOT NULL DEFAULT 'creating',
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     stopped_at     TIMESTAMPTZ
@@ -23,6 +26,3 @@ CREATE TABLE container_metrics (
 );
 
 CREATE INDEX ON container_metrics (user_id, recorded_at DESC);
-
-ALTER TABLE user_instances ADD COLUMN IF NOT EXISTS platform TEXT DEFAULT 'OpenRouter';
-ALTER TABLE user_instances ADD COLUMN IF NOT EXISTS llm_model TEXT;

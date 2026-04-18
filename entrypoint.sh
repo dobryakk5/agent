@@ -114,4 +114,8 @@ MEMORY
 fi
 
 echo "[entrypoint] Starting OpenClaw gateway..."
+
+# Экспортируем ключ в окружение процесса — openclaw читает его напрямую из env
+export "${ENV_KEY}=${API_KEY}"
+
 exec openclaw gateway

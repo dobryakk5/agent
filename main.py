@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-from docker_manager import create_instance, stop_instance, remove_instance
+from docker_manager import create_instance, stop_instance, remove_instance, recreate_container
 from metrics import collect_metrics_loop
 
 load_dotenv()
@@ -64,20 +64,52 @@ async def provision(req: ProvisionRequest):
         """
         INSERT INTO user_instances
             (user_id, container_name, network_name, volume_name,
-             telegram_bot, platform, llm_model, status)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'running')
+             telegram_bot, api_key, platform, llm_model, status)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'running')
         """,
         req.user_id,
         result["container_name"],
         result["network_name"],
         result["volume_name"],
         req.telegram_bot_token,
+        req.api_key,
         req.platform,
         req.llm_model,
     )
 
     return result
 
+
+class UpdateModelRequest(BaseModel):
+    llm_model: str
+
+
+@app.post("/update/{user_id}")
+async def update_model(user_id: int, req: UpdateModelRequest):
+    pool = app.state.pool
+
+    row = await pool.fetchrow(
+        "SELECT platform, api_key, telegram_bot, llm_model FROM user_instances WHERE user_id = $1",
+        user_id,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Instance not found")
+
+    result = recreate_container(
+        user_id=user_id,
+        platform=row["platform"],
+        api_key=row["api_key"],
+        llm_model=req.llm_model,
+        telegram_bot_token=row["telegram_bot"],
+    )
+
+    await pool.execute(
+        "UPDATE user_instances SET llm_model=$1, status='running', stopped_at=NULL WHERE user_id=$2",
+        req.llm_model,
+        user_id,
+    )
+
+    return result
 
 @app.post("/stop/{user_id}")
 async def stop(user_id: int):
