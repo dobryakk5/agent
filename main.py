@@ -15,6 +15,35 @@ DB_URL = os.environ["DATABASE_URL"]
 
 PLATFORMS = {"anthropic", "openrouter", "openai"}
 
+PLATFORM_ENV_KEYS = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+    "openai": "OPENAI_API_KEY",
+}
+
+
+def resolve_api_key(platform: str, request_api_key: str | None, stored_api_key: str | None = None) -> str:
+    req_key = (request_api_key or "").strip()
+    db_key = (stored_api_key or "").strip()
+
+    if req_key:
+        return req_key
+
+    if db_key:
+        return db_key
+
+    env_name = PLATFORM_ENV_KEYS.get(platform)
+    env_key = (os.getenv(env_name, "") or "").strip() if env_name else ""
+
+    if env_key:
+        return env_key
+
+    raise HTTPException(
+        status_code=400,
+        detail=f"API key is required for platform '{platform}'. "
+               f"Pass it in request or set {env_name} in .env",
+    )
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -34,9 +63,9 @@ async def dashboard():
 
 class ProvisionRequest(BaseModel):
     user_id: int
-    platform: str          # anthropic | openrouter | openai
-    api_key: str
-    llm_model: str         # например: openrouter/nvidia/nemotron-3-super-120b-a12b:free
+    platform: str
+    api_key: str = ""
+    llm_model: str
     telegram_bot_token: str
 
 
@@ -52,10 +81,12 @@ async def provision(req: ProvisionRequest):
     if existing:
         raise HTTPException(status_code=409, detail="Instance already exists")
 
+    resolved_api_key = resolve_api_key(req.platform, req.api_key)
+
     result = create_instance(
         user_id=req.user_id,
         platform=req.platform,
-        api_key=req.api_key,
+        api_key=resolved_api_key,
         llm_model=req.llm_model,
         telegram_bot_token=req.telegram_bot_token,
     )
@@ -72,7 +103,7 @@ async def provision(req: ProvisionRequest):
         result["network_name"],
         result["volume_name"],
         req.telegram_bot_token,
-        req.api_key,
+        resolved_api_key,
         req.platform,
         req.llm_model,
     )
@@ -95,21 +126,29 @@ async def update_model(user_id: int, req: UpdateModelRequest):
     if not row:
         raise HTTPException(status_code=404, detail="Instance not found")
 
+    resolved_api_key = resolve_api_key(
+        platform=row["platform"],
+        request_api_key="",
+        stored_api_key=row["api_key"],
+    )
+
     result = recreate_container(
         user_id=user_id,
         platform=row["platform"],
-        api_key=row["api_key"],
+        api_key=resolved_api_key,
         llm_model=req.llm_model,
         telegram_bot_token=row["telegram_bot"],
     )
 
     await pool.execute(
-        "UPDATE user_instances SET llm_model=$1, status='running', stopped_at=NULL WHERE user_id=$2",
+        "UPDATE user_instances SET api_key=$1, llm_model=$2, status='running', stopped_at=NULL WHERE user_id=$3",
+        resolved_api_key,
         req.llm_model,
         user_id,
     )
 
     return result
+
 
 @app.post("/stop/{user_id}")
 async def stop(user_id: int):
