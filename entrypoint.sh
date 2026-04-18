@@ -111,4 +111,4 @@ MEMORY
 fi
 
 echo "[entrypoint] Starting OpenClaw gateway..."
-exec openclaw gateway start
+exec openclaw gateway

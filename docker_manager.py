@@ -37,6 +37,13 @@ def create_instance(
         network=network_name,
         detach=True,
         restart_policy={"Name": "unless-stopped"},
+        healthcheck={
+            "test": ["CMD-SHELL", "curl -sf http://127.0.0.1:18789/health || exit 1"],
+            "interval": 30_000_000_000,
+            "timeout": 5_000_000_000,
+            "start_period": 60_000_000_000,
+            "retries": 3,
+        },
     )
 
     # Подключаем к bridge для доступа к интернету
