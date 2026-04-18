@@ -13,6 +13,8 @@ from metrics import collect_metrics_loop
 load_dotenv()
 DB_URL = os.environ["DATABASE_URL"]
 
+PLATFORMS = {"anthropic", "openrouter", "openai"}
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -25,44 +27,53 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 
-# ─── Dashboard ────────────────────────────────────────────────────────────────
-
 @app.get("/")
 async def dashboard():
     return FileResponse("dashboard.html")
 
 
-# ─── API ──────────────────────────────────────────────────────────────────────
-
 class ProvisionRequest(BaseModel):
     user_id: int
+    platform: str          # anthropic | openrouter | openai
     api_key: str
+    llm_model: str         # например: openrouter/nvidia/nemotron-3-super-120b-a12b:free
     telegram_bot_token: str
 
 
 @app.post("/provision")
 async def provision(req: ProvisionRequest):
-    pool = app.state.pool
+    if req.platform not in PLATFORMS:
+        raise HTTPException(status_code=400, detail=f"Unknown platform. Use: {PLATFORMS}")
 
+    pool = app.state.pool
     existing = await pool.fetchrow(
         "SELECT status FROM user_instances WHERE user_id = $1", req.user_id
     )
     if existing:
         raise HTTPException(status_code=409, detail="Instance already exists")
 
-    result = create_instance(req.user_id, req.api_key, req.telegram_bot_token)
+    result = create_instance(
+        user_id=req.user_id,
+        platform=req.platform,
+        api_key=req.api_key,
+        llm_model=req.llm_model,
+        telegram_bot_token=req.telegram_bot_token,
+    )
 
     await pool.execute(
         """
         INSERT INTO user_instances
-            (user_id, container_name, network_name, volume_name, telegram_bot, status)
-        VALUES ($1, $2, $3, $4, $5, 'running')
+            (user_id, container_name, network_name, volume_name,
+             telegram_bot, platform, llm_model, status)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'running')
         """,
         req.user_id,
         result["container_name"],
         result["network_name"],
         result["volume_name"],
         req.telegram_bot_token,
+        req.platform,
+        req.llm_model,
     )
 
     return result
@@ -108,21 +119,3 @@ async def get_metrics(user_id: int):
         user_id,
     )
     return [dict(r) for r in rows]
-
-
-@app.get("/metrics/{user_id}/latest")
-async def get_latest_metric(user_id: int):
-    pool = app.state.pool
-    row = await pool.fetchrow(
-        """
-        SELECT cpu_percent, mem_usage_mb, net_rx_mb, net_tx_mb, recorded_at
-        FROM container_metrics
-        WHERE user_id = $1
-        ORDER BY recorded_at DESC
-        LIMIT 1
-        """,
-        user_id,
-    )
-    if not row:
-        raise HTTPException(status_code=404, detail="No metrics yet")
-    return dict(row)

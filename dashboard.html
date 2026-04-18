@@ -19,7 +19,6 @@
     --warn: #ffa94d;
     --text: #e0e0f0;
     --muted: #5a5a7a;
-    --peak: #ff4d6d;
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -29,10 +28,8 @@
     color: var(--text);
     font-family: 'JetBrains Mono', monospace;
     min-height: 100vh;
-    overflow-x: hidden;
   }
 
-  /* Grid background */
   body::before {
     content: '';
     position: fixed;
@@ -53,7 +50,6 @@
     padding: 0 24px 60px;
   }
 
-  /* Header */
   header {
     display: flex;
     align-items: center;
@@ -63,65 +59,28 @@
     margin-bottom: 40px;
   }
 
-  .logo {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
+  .logo { display: flex; align-items: center; gap: 12px; }
   .logo-icon {
-    width: 36px;
-    height: 36px;
+    width: 36px; height: 36px;
     background: var(--accent);
     border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    display: flex; align-items: center; justify-content: center;
     font-size: 18px;
   }
-
-  .logo-text {
-    font-family: 'Syne', sans-serif;
-    font-size: 20px;
-    font-weight: 800;
-    letter-spacing: -0.5px;
-  }
-
+  .logo-text { font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 800; }
   .logo-text span { color: var(--accent); }
 
-  .header-status {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 12px;
-    color: var(--muted);
-  }
+  .header-status { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent2); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
-  .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--accent2);
-    animation: pulse 2s infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
-  }
-
-  /* Section title */
   .section-title {
     font-family: 'Syne', sans-serif;
-    font-size: 13px;
-    font-weight: 700;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin-bottom: 16px;
+    font-size: 13px; font-weight: 700;
+    letter-spacing: 2px; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 16px;
   }
 
-  /* Provision form */
   .provision-card {
     background: var(--card);
     border: 1px solid var(--border);
@@ -130,23 +89,20 @@
     margin-bottom: 40px;
   }
 
-  .form-row {
+  .form-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr auto;
+    grid-template-columns: 100px 1fr 1fr 1fr 1fr auto;
     gap: 12px;
     align-items: end;
   }
 
   .field label {
     display: block;
-    font-size: 11px;
-    color: var(--muted);
-    margin-bottom: 6px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
+    font-size: 11px; color: var(--muted);
+    margin-bottom: 6px; letter-spacing: 1px; text-transform: uppercase;
   }
 
-  .field input {
+  .field input, .field select {
     width: 100%;
     background: var(--surface);
     border: 1px solid var(--border);
@@ -157,54 +113,52 @@
     font-size: 13px;
     outline: none;
     transition: border-color 0.2s;
+    cursor: pointer;
   }
 
-  .field input:focus {
-    border-color: var(--accent);
-  }
-
+  .field input:focus, .field select:focus { border-color: var(--accent); }
   .field input::placeholder { color: var(--muted); }
+
+  /* Platform badge colors */
+  .platform-anthropic { border-color: #e8834a !important; }
+  .platform-openrouter { border-color: #6366f1 !important; }
+  .platform-openai { border-color: #10a37f !important; }
+
+  /* Model hints */
+  .model-hints {
+    margin-top: 10px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .hint-chip {
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .hint-chip:hover { border-color: var(--accent); color: var(--text); }
 
   .btn {
     padding: 10px 20px;
-    border: none;
-    border-radius: 8px;
+    border: none; border-radius: 8px;
     font-family: 'JetBrains Mono', monospace;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s;
-    white-space: nowrap;
+    font-size: 13px; font-weight: 500;
+    cursor: pointer; transition: all 0.2s; white-space: nowrap;
   }
-
-  .btn-primary {
-    background: var(--accent);
-    color: #fff;
-  }
-
+  .btn-primary { background: var(--accent); color: #fff; }
   .btn-primary:hover { background: #6a4de0; transform: translateY(-1px); }
-
-  .btn-stop {
-    background: transparent;
-    color: var(--danger);
-    border: 1px solid var(--danger);
-    padding: 6px 12px;
-    font-size: 11px;
-  }
-
+  .btn-stop { background: transparent; color: var(--danger); border: 1px solid var(--danger); padding: 6px 12px; font-size: 11px; }
   .btn-stop:hover { background: rgba(255,77,109,0.1); }
-
-  .btn-remove {
-    background: transparent;
-    color: var(--muted);
-    border: 1px solid var(--border);
-    padding: 6px 12px;
-    font-size: 11px;
-  }
-
+  .btn-remove { background: transparent; color: var(--muted); border: 1px solid var(--border); padding: 6px 12px; font-size: 11px; }
   .btn-remove:hover { color: var(--danger); border-color: var(--danger); }
 
-  /* Instances table */
   .table-card {
     background: var(--card);
     border: 1px solid var(--border);
@@ -214,172 +168,69 @@
   }
 
   table { width: 100%; border-collapse: collapse; }
-
   th {
     background: var(--surface);
     padding: 12px 16px;
     text-align: left;
-    font-size: 11px;
-    color: var(--muted);
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    font-weight: 500;
+    font-size: 11px; color: var(--muted);
+    letter-spacing: 1px; text-transform: uppercase; font-weight: 500;
   }
-
-  td {
-    padding: 14px 16px;
-    border-top: 1px solid var(--border);
-    font-size: 13px;
-    vertical-align: middle;
-  }
-
+  td { padding: 14px 16px; border-top: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
   tr:hover td { background: rgba(124,92,252,0.04); }
 
-  .badge {
-    display: inline-block;
-    padding: 3px 8px;
-    border-radius: 4px;
-    font-size: 11px;
-    font-weight: 500;
-  }
-
+  .badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
   .badge-running { background: rgba(0,229,180,0.15); color: var(--accent2); }
   .badge-stopped { background: rgba(255,77,109,0.12); color: var(--danger); }
   .badge-creating { background: rgba(255,169,77,0.12); color: var(--warn); }
 
+  .platform-tag {
+    display: inline-block; padding: 2px 7px; border-radius: 4px;
+    font-size: 10px; font-weight: 500; letter-spacing: 0.5px; text-transform: uppercase;
+  }
+  .pt-anthropic { background: rgba(232,131,74,0.15); color: #e8834a; }
+  .pt-openrouter { background: rgba(99,102,241,0.15); color: #818cf8; }
+  .pt-openai { background: rgba(16,163,127,0.15); color: #10a37f; }
+
+  .model-cell { font-size: 11px; color: var(--muted); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
   .actions { display: flex; gap: 8px; }
 
-  /* Metrics section */
-  .metrics-header {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    margin-bottom: 16px;
-  }
-
+  .metrics-header { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
   .metrics-select {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 8px 12px;
-    color: var(--text);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 13px;
-    outline: none;
-    cursor: pointer;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 12px;
+    color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 13px;
+    outline: none; cursor: pointer;
   }
 
-  .metrics-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-  }
+  .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .chart-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .chart-title { font-size: 12px; color: var(--muted); margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; }
+  .peak-label { font-size: 11px; color: #ff4d6d; }
 
-  .chart-card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 20px;
-  }
-
-  .chart-title {
-    font-size: 12px;
-    color: var(--muted);
-    margin-bottom: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .peak-label {
-    font-size: 11px;
-    color: var(--peak);
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  canvas { width: 100% !important; }
-
-  /* Stats row */
-  .stats-row {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
-    margin-bottom: 24px;
-  }
-
-  .stat-card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 16px 20px;
-  }
-
-  .stat-label {
-    font-size: 11px;
-    color: var(--muted);
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    margin-bottom: 6px;
-  }
-
-  .stat-value {
-    font-family: 'Syne', sans-serif;
-    font-size: 24px;
-    font-weight: 800;
-    color: var(--text);
-  }
-
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+  .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; }
+  .stat-label { font-size: 11px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }
+  .stat-value { font-family: 'Syne', sans-serif; font-size: 24px; font-weight: 800; }
   .stat-value.accent { color: var(--accent); }
   .stat-value.green { color: var(--accent2); }
   .stat-value.warn { color: var(--warn); }
 
-  /* Toast */
   .toast {
-    position: fixed;
-    bottom: 24px;
-    right: 24px;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 14px 20px;
-    font-size: 13px;
-    z-index: 100;
-    transform: translateY(80px);
-    opacity: 0;
-    transition: all 0.3s;
-    max-width: 320px;
+    position: fixed; bottom: 24px; right: 24px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 20px; font-size: 13px;
+    z-index: 100; transform: translateY(80px); opacity: 0;
+    transition: all 0.3s; max-width: 340px;
   }
-
   .toast.show { transform: translateY(0); opacity: 1; }
   .toast.success { border-left: 3px solid var(--accent2); }
   .toast.error { border-left: 3px solid var(--danger); }
 
-  .empty {
-    text-align: center;
-    padding: 40px;
-    color: var(--muted);
-    font-size: 13px;
-  }
+  .empty { text-align: center; padding: 40px; color: var(--muted); font-size: 13px; }
 
-  /* Loader */
-  .loader {
-    display: inline-block;
-    width: 12px;
-    height: 12px;
-    border: 2px solid var(--border);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 0.6s linear infinite;
-    margin-right: 6px;
-    vertical-align: middle;
-  }
-
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  @media (max-width: 768px) {
-    .form-row { grid-template-columns: 1fr; }
+  @media (max-width: 900px) {
+    .form-grid { grid-template-columns: 1fr 1fr; }
     .metrics-grid { grid-template-columns: 1fr; }
     .stats-row { grid-template-columns: 1fr 1fr; }
   }
@@ -399,10 +250,10 @@
     </div>
   </header>
 
-  <!-- Stats row -->
-  <div class="stats-row" id="stats-row">
+  <!-- Stats -->
+  <div class="stats-row">
     <div class="stat-card">
-      <div class="stat-label">Total instances</div>
+      <div class="stat-label">Total</div>
       <div class="stat-value accent" id="stat-total">—</div>
     </div>
     <div class="stat-card">
@@ -414,7 +265,7 @@
       <div class="stat-value warn" id="stat-stopped">—</div>
     </div>
     <div class="stat-card">
-      <div class="stat-label">Avg CPU %</div>
+      <div class="stat-label">Avg CPU</div>
       <div class="stat-value" id="stat-cpu">—</div>
     </div>
   </div>
@@ -422,20 +273,42 @@
   <!-- Provision form -->
   <div class="section-title">Новый инстанс</div>
   <div class="provision-card">
-    <div class="form-row">
+    <div class="form-grid">
+
       <div class="field">
         <label>User ID</label>
         <input id="f-uid" type="number" placeholder="42" />
       </div>
+
       <div class="field">
-        <label>Anthropic API Key</label>
+        <label>Платформа</label>
+        <select id="f-platform" onchange="onPlatformChange()">
+          <option value="anthropic">Anthropic</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="openai">OpenAI</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>API Key</label>
         <input id="f-key" type="password" placeholder="sk-ant-..." />
       </div>
+
+      <div class="field" style="grid-column: span 2;">
+        <label>LLM Модель</label>
+        <input id="f-model" placeholder="anthropic/claude-sonnet-4-6" />
+        <div class="model-hints" id="model-hints"></div>
+      </div>
+
       <div class="field">
-        <label>Telegram Bot Token</label>
+        <label>Telegram Token</label>
         <input id="f-tg" type="password" placeholder="7123...:AAF..." />
       </div>
-      <button class="btn btn-primary" onclick="provision()">▶ Запустить</button>
+
+    </div>
+
+    <div style="margin-top:16px; display:flex; justify-content:flex-end;">
+      <button class="btn btn-primary" onclick="provision()">▶ Запустить инстанс</button>
     </div>
   </div>
 
@@ -446,9 +319,9 @@
       <thead>
         <tr>
           <th>User ID</th>
-          <th>Container</th>
+          <th>Платформа</th>
+          <th>Модель</th>
           <th>Status</th>
-          <th>Telegram</th>
           <th>Создан</th>
           <th>Действия</th>
         </tr>
@@ -470,17 +343,11 @@
 
   <div class="metrics-grid">
     <div class="chart-card">
-      <div class="chart-title">
-        CPU %
-        <div class="peak-label" id="cpu-peak"></div>
-      </div>
+      <div class="chart-title">CPU % <div class="peak-label" id="cpu-peak"></div></div>
       <canvas id="cpu-chart"></canvas>
     </div>
     <div class="chart-card">
-      <div class="chart-title">
-        RAM (MB)
-        <div class="peak-label" id="mem-peak"></div>
-      </div>
+      <div class="chart-title">RAM (MB) <div class="peak-label" id="mem-peak"></div></div>
       <canvas id="mem-chart"></canvas>
     </div>
     <div class="chart-card">
@@ -498,7 +365,56 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const API = ''; // тот же хост, если dashboard отдаётся через FastAPI static
+// Подсказки моделей по платформе
+const MODEL_HINTS = {
+  anthropic: [
+    'anthropic/claude-sonnet-4-6',
+    'anthropic/claude-opus-4-6',
+    'anthropic/claude-haiku-4-5',
+  ],
+  openrouter: [
+    'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
+    'openrouter/google/gemini-2.5-pro:free',
+    'openrouter/meta-llama/llama-4-maverick:free',
+    'openrouter/anthropic/claude-sonnet-4-6',
+    'openrouter/openai/gpt-4o',
+  ],
+  openai: [
+    'openai/gpt-4o',
+    'openai/gpt-4o-mini',
+    'openai/o3',
+  ],
+};
+
+const KEY_PLACEHOLDER = {
+  anthropic: 'sk-ant-...',
+  openrouter: 'sk-or-...',
+  openai: 'sk-...',
+};
+
+function onPlatformChange() {
+  const p = document.getElementById('f-platform').value;
+  const modelInput = document.getElementById('f-model');
+  const keyInput = document.getElementById('f-key');
+  const hints = document.getElementById('model-hints');
+
+  modelInput.value = MODEL_HINTS[p][0] || '';
+  keyInput.placeholder = KEY_PLACEHOLDER[p] || 'key...';
+
+  // Подсветка select
+  const sel = document.getElementById('f-platform');
+  sel.className = `platform-${p}`;
+
+  // Chips
+  hints.innerHTML = MODEL_HINTS[p].map(m =>
+    `<span class="hint-chip" onclick="document.getElementById('f-model').value='${m}'">${m}</span>`
+  ).join('');
+}
+
+// Инит
+onPlatformChange();
+
+// ── API ──────────────────────────────────────────────────────────────────────
 
 let charts = {};
 
@@ -506,14 +422,11 @@ function toast(msg, type = 'success') {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.className = `toast ${type} show`;
-  setTimeout(() => t.className = 'toast', 3000);
+  setTimeout(() => t.className = 'toast', 3500);
 }
 
 async function api(path, opts = {}) {
-  const r = await fetch(API + path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...opts
-  });
+  const r = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
   if (!r.ok) {
     const err = await r.json().catch(() => ({}));
     throw new Error(err.detail || r.statusText);
@@ -526,35 +439,35 @@ async function loadInstances() {
     const data = await api('/instances');
     document.getElementById('api-status').textContent = 'online';
 
-    // Stats
     const running = data.filter(i => i.status === 'running').length;
     const stopped = data.filter(i => i.status === 'stopped').length;
     document.getElementById('stat-total').textContent = data.length;
     document.getElementById('stat-running').textContent = running;
     document.getElementById('stat-stopped').textContent = stopped;
 
-    // Update select
     const sel = document.getElementById('metrics-uid');
     const cur = sel.value;
     sel.innerHTML = '<option value="">— выбери user_id —</option>' +
       data.map(i => `<option value="${i.user_id}">${i.user_id} (${i.status})</option>`).join('');
     if (cur) sel.value = cur;
 
-    // Table
     const tbody = document.getElementById('instances-tbody');
     if (!data.length) {
       tbody.innerHTML = '<tr><td colspan="6" class="empty">Нет инстансов</td></tr>';
       return;
     }
+
     tbody.innerHTML = data.map(i => {
-      const badgeClass = { running: 'badge-running', stopped: 'badge-stopped', creating: 'badge-creating' }[i.status] || 'badge-stopped';
-      const tgShort = i.telegram_bot ? i.telegram_bot.split(':')[0] + ':***' : '—';
+      const bc = { running: 'badge-running', stopped: 'badge-stopped', creating: 'badge-creating' }[i.status] || 'badge-stopped';
+      const platform = i.platform || '—';
+      const ptClass = `pt-${platform}`;
+      const model = i.llm_model || '—';
       const date = new Date(i.created_at).toLocaleString('ru');
       return `<tr>
         <td>${i.user_id}</td>
-        <td style="color:var(--muted);font-size:12px">${i.container_name}</td>
-        <td><span class="badge ${badgeClass}">${i.status}</span></td>
-        <td style="color:var(--muted);font-size:11px">${tgShort}</td>
+        <td><span class="platform-tag ${ptClass}">${platform}</span></td>
+        <td class="model-cell" title="${model}">${model}</td>
+        <td><span class="badge ${bc}">${i.status}</span></td>
         <td style="color:var(--muted);font-size:11px">${date}</td>
         <td>
           <div class="actions">
@@ -564,26 +477,28 @@ async function loadInstances() {
         </td>
       </tr>`;
     }).join('');
-  } catch (e) {
+  } catch(e) {
     document.getElementById('api-status').textContent = 'offline';
-    console.error(e);
   }
 }
 
 async function provision() {
   const uid = +document.getElementById('f-uid').value;
+  const platform = document.getElementById('f-platform').value;
   const key = document.getElementById('f-key').value.trim();
+  const model = document.getElementById('f-model').value.trim();
   const tg = document.getElementById('f-tg').value.trim();
-  if (!uid || !key || !tg) return toast('Заполни все поля', 'error');
+
+  if (!uid || !key || !model || !tg) return toast('Заполни все поля', 'error');
 
   try {
     await api('/provision', {
       method: 'POST',
-      body: JSON.stringify({ user_id: uid, api_key: key, telegram_bot_token: tg })
+      body: JSON.stringify({ user_id: uid, platform, api_key: key, llm_model: model, telegram_bot_token: tg })
     });
-    toast(`Инстанс ${uid} запущен`);
+    toast(`Инстанс ${uid} запущен (${platform} / ${model})`);
     loadInstances();
-  } catch (e) { toast(e.message, 'error'); }
+  } catch(e) { toast(e.message, 'error'); }
 }
 
 async function stop(uid) {
@@ -591,77 +506,55 @@ async function stop(uid) {
     await api(`/stop/${uid}`, { method: 'POST' });
     toast(`Инстанс ${uid} остановлен`);
     loadInstances();
-  } catch (e) { toast(e.message, 'error'); }
+  } catch(e) { toast(e.message, 'error'); }
 }
 
 async function remove(uid) {
-  if (!confirm(`Удалить инстанс ${uid}? Данные тоже удалятся.`)) return;
+  if (!confirm(`Удалить инстанс ${uid}? Volume с памятью тоже удалится.`)) return;
   try {
     await api(`/remove/${uid}`, { method: 'DELETE' });
     toast(`Инстанс ${uid} удалён`);
     loadInstances();
-  } catch (e) { toast(e.message, 'error'); }
+  } catch(e) { toast(e.message, 'error'); }
 }
 
-function makeChart(id, label, color, peakColor) {
+// ── Charts ───────────────────────────────────────────────────────────────────
+
+function makeChart(id, label, color) {
   if (charts[id]) charts[id].destroy();
-  const ctx = document.getElementById(id).getContext('2d');
-  charts[id] = new Chart(ctx, {
+  charts[id] = new Chart(document.getElementById(id).getContext('2d'), {
     type: 'line',
     data: {
       labels: [],
-      datasets: [{
-        label,
-        data: [],
-        borderColor: color,
-        backgroundColor: color + '18',
-        borderWidth: 2,
-        pointRadius: 3,
-        pointBackgroundColor: [],
-        tension: 0.3,
-        fill: true,
-      }]
+      datasets: [{ label, data: [], borderColor: color, backgroundColor: color + '18',
+        borderWidth: 2, pointRadius: 3, pointBackgroundColor: [], tension: 0.3, fill: true }]
     },
     options: {
-      responsive: true,
-      animation: false,
+      responsive: true, animation: false,
       plugins: { legend: { display: false } },
       scales: {
-        x: {
-          ticks: { color: '#5a5a7a', font: { family: 'JetBrains Mono', size: 10 }, maxTicksLimit: 8 },
-          grid: { color: '#1e1e2e' }
-        },
-        y: {
-          ticks: { color: '#5a5a7a', font: { family: 'JetBrains Mono', size: 10 } },
-          grid: { color: '#1e1e2e' },
-          beginAtZero: true
-        }
+        x: { ticks: { color: '#5a5a7a', font: { family: 'JetBrains Mono', size: 10 }, maxTicksLimit: 8 }, grid: { color: '#1e1e2e' } },
+        y: { ticks: { color: '#5a5a7a', font: { family: 'JetBrains Mono', size: 10 } }, grid: { color: '#1e1e2e' }, beginAtZero: true }
       }
     }
   });
-  return charts[id];
 }
 
-function updateChart(chartId, labels, values, peakLabelId) {
-  const chart = charts[chartId];
-  if (!chart) return;
+function updateChart(id, labels, values, peakId) {
+  const c = charts[id];
+  if (!c) return;
   const max = Math.max(...values);
-  const pointColors = values.map(v => v === max && max > 0 ? '#ff4d6d' : chart.data.datasets[0].borderColor);
-  chart.data.labels = labels;
-  chart.data.datasets[0].data = values;
-  chart.data.datasets[0].pointBackgroundColor = pointColors;
-  chart.update();
-
-  if (peakLabelId && max > 0) {
-    document.getElementById(peakLabelId).innerHTML = `▲ Пик: <strong>${max.toFixed(2)}</strong>`;
-  }
+  c.data.labels = labels;
+  c.data.datasets[0].data = values;
+  c.data.datasets[0].pointBackgroundColor = values.map(v => v === max && max > 0 ? '#ff4d6d' : c.data.datasets[0].borderColor);
+  c.update();
+  if (peakId && max > 0) document.getElementById(peakId).innerHTML = `▲ Пик: <strong>${max.toFixed(2)}</strong>`;
 }
 
 async function loadMetrics() {
   const uid = document.getElementById('metrics-uid').value;
   if (!uid) return;
 
-  // Init charts if needed
   if (!charts['cpu-chart']) {
     makeChart('cpu-chart', 'CPU %', '#7c5cfc');
     makeChart('mem-chart', 'RAM MB', '#00e5b4');
@@ -681,13 +574,11 @@ async function loadMetrics() {
     updateChart('netrx-chart', labels, rows.map(r => r.net_rx_mb));
     updateChart('nettx-chart', labels, rows.map(r => r.net_tx_mb));
 
-    // Avg CPU stat
-    const avgCpu = (rows.reduce((s, r) => s + r.cpu_percent, 0) / rows.length).toFixed(1);
+    const avgCpu = (rows.reduce((s,r) => s + r.cpu_percent, 0) / rows.length).toFixed(1);
     document.getElementById('stat-cpu').textContent = avgCpu + '%';
-  } catch (e) { toast(e.message, 'error'); }
+  } catch(e) { toast(e.message, 'error'); }
 }
 
-// Init
 loadInstances();
 setInterval(loadInstances, 15000);
 </script>

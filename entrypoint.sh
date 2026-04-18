@@ -10,12 +10,30 @@ MEMORY_FILE="$WORKSPACE/MEMORY.md"
 
 mkdir -p "$CONFIG_DIR" "$MEMORY_DIR"
 
-# Конфиг openclaw
+# Определяем env-переменную для ключа в зависимости от платформы
+case "$PLATFORM" in
+  openrouter)
+    ENV_KEY="OPENROUTER_API_KEY"
+    ;;
+  openai)
+    ENV_KEY="OPENAI_API_KEY"
+    ;;
+  anthropic|*)
+    ENV_KEY="ANTHROPIC_API_KEY"
+    ;;
+esac
+
+# Генерируем конфиг
 cat > "$CONFIG_FILE" << CONF
 {
+  "env": {
+    "${ENV_KEY}": "${API_KEY}"
+  },
   "agents": {
     "defaults": {
-      "model": "anthropic/claude-sonnet-4-6",
+      "model": {
+        "primary": "${LLM_MODEL}"
+      },
       "timeoutSeconds": 120
     }
   },
@@ -37,8 +55,11 @@ cat > "$CONFIG_FILE" << CONF
 }
 CONF
 
-# AGENTS.md — инструкции для агента как личного ассистента
-# Создаётся только при первом запуске контейнера
+echo "[entrypoint] Platform: $PLATFORM"
+echo "[entrypoint] Model: $LLM_MODEL"
+echo "[entrypoint] Config written to $CONFIG_FILE"
+
+# AGENTS.md — только при первом запуске
 if [ ! -f "$AGENTS_FILE" ]; then
 cat > "$AGENTS_FILE" << 'AGENTS'
 # Personal Assistant Instructions
@@ -70,7 +91,7 @@ You are a personal AI assistant. Your primary goal is to help the user with any 
 AGENTS
 fi
 
-# MEMORY.md — создаётся только если его нет
+# MEMORY.md — только при первом запуске
 if [ ! -f "$MEMORY_FILE" ]; then
 cat > "$MEMORY_FILE" << 'MEMORY'
 # Long-term Memory
@@ -86,8 +107,5 @@ cat > "$MEMORY_FILE" << 'MEMORY'
 MEMORY
 fi
 
-echo "[entrypoint] Config written"
-echo "[entrypoint] Workspace: $WORKSPACE"
 echo "[entrypoint] Starting OpenClaw gateway..."
-
 exec openclaw gateway start
