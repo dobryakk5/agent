@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Личный кабинет</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --border: #1e1e2e;
+    --border-bright: #2e2e4e;
+    --text: #e2e2f0;
+    --muted: #6b6b8a;
+    --accent: #7c6cfa;
+    --accent-dim: #7c6cfa22;
+    --green: #4ade80;
+    --green-dim: #4ade8022;
+    --red: #f87171;
+    --red-dim: #f8717122;
+    --yellow: #fbbf24;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'IBM Plex Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    font-size: 14px;
+  }
+
+  /* ── Auth Screen ── */
+  #auth-screen {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 24px;
+  }
+
+  .auth-box {
+    width: 100%;
+    max-width: 380px;
+  }
+
+  .auth-logo {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-bottom: 40px;
+  }
+
+  .auth-logo span {
+    color: var(--accent);
+  }
+
+  .auth-title {
+    font-size: 24px;
+    font-weight: 300;
+    margin-bottom: 8px;
+    letter-spacing: -0.02em;
+  }
+
+  .auth-sub {
+    color: var(--muted);
+    font-size: 13px;
+    margin-bottom: 32px;
+  }
+
+  .auth-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 24px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .auth-tab {
+    flex: 1;
+    padding: 8px;
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .auth-tab.active {
+    background: var(--border);
+    color: var(--text);
+  }
+
+  .field {
+    margin-bottom: 14px;
+  }
+
+  .field label {
+    display: block;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .field input {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .field input:focus {
+    border-color: var(--accent);
+  }
+
+  .btn-primary {
+    width: 100%;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 11px;
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: opacity 0.15s;
+  }
+
+  .btn-primary:hover { opacity: 0.85; }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .auth-error {
+    background: var(--red-dim);
+    border: 1px solid var(--red);
+    border-radius: 6px;
+    padding: 10px 12px;
+    color: var(--red);
+    font-size: 13px;
+    margin-top: 12px;
+    display: none;
+  }
+
+  /* ── Cabinet Screen ── */
+  #cabinet-screen { display: none; }
+
+  .topbar {
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .topbar-logo {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+
+  .topbar-logo span { color: var(--accent); }
+
+  .topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .user-email {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .btn-ghost {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 5px;
+    padding: 5px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: 'IBM Plex Sans', sans-serif;
+    transition: all 0.15s;
+  }
+
+  .btn-ghost:hover {
+    border-color: var(--border-bright);
+    color: var(--text);
+  }
+
+  .main {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 40px 24px;
+  }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin-bottom: 16px;
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
+  .card-title {
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+  }
+
+  .badge {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .badge-green  { background: var(--green-dim);  color: var(--green); }
+  .badge-red    { background: var(--red-dim);    color: var(--red); }
+  .badge-yellow { background: #fbbf2422; color: var(--yellow); }
+  .badge-muted  { background: var(--border);     color: var(--muted); }
+
+  /* ── Agent status ── */
+  .agent-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .dot-green  { background: var(--green);  box-shadow: 0 0 6px var(--green); }
+  .dot-red    { background: var(--red); }
+  .dot-yellow { background: var(--yellow); animation: pulse 1.5s infinite; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .agent-info {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+    flex: 1;
+  }
+
+  .agent-info strong { color: var(--text); }
+
+  .btn-sm {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 5px;
+    padding: 5px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: 'IBM Plex Sans', sans-serif;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+
+  .btn-sm:hover { border-color: var(--border-bright); }
+
+  .btn-sm.danger {
+    border-color: var(--red-dim);
+    color: var(--red);
+  }
+
+  .btn-sm.danger:hover { border-color: var(--red); }
+
+  /* ── Model selector ── */
+  .model-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  @media (max-width: 520px) {
+    .model-grid { grid-template-columns: 1fr; }
+  }
+
+  .model-card {
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 12px 14px;
+    cursor: pointer;
+    transition: all 0.15s;
+    background: none;
+    text-align: left;
+    width: 100%;
+  }
+
+  .model-card:hover { border-color: var(--border-bright); }
+
+  .model-card.selected {
+    border-color: var(--accent);
+    background: var(--accent-dim);
+  }
+
+  .model-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 3px;
+  }
+
+  .model-desc {
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .model-check {
+    float: right;
+    color: var(--accent);
+    font-size: 14px;
+    display: none;
+  }
+
+  .model-card.selected .model-check { display: inline; }
+
+  .save-model-btn {
+    margin-top: 14px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 9px 18px;
+    font-size: 13px;
+    font-family: 'IBM Plex Sans', sans-serif;
+    cursor: pointer;
+    transition: opacity 0.15s;
+    display: none;
+  }
+
+  .save-model-btn:hover { opacity: 0.85; }
+  .save-model-btn.visible { display: inline-block; }
+
+  /* ── Features grid ── */
+  .features-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  @media (max-width: 520px) {
+    .features-grid { grid-template-columns: 1fr; }
+  }
+
+  .feature-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+  }
+
+  .feature-label {
+    font-size: 13px;
+    color: var(--text);
+  }
+
+  .feature-soon {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  .feature-action {
+    flex-shrink: 0;
+    margin-left: 12px;
+  }
+
+  .btn-connect {
+    background: none;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    border-radius: 5px;
+    padding: 5px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    font-family: 'IBM Plex Sans', sans-serif;
+    transition: all 0.15s;
+  }
+
+  .btn-connect:hover { background: var(--accent-dim); }
+
+  .btn-disconnect {
+    background: none;
+    border: 1px solid var(--red-dim);
+    color: var(--red);
+    border-radius: 5px;
+    padding: 5px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    font-family: 'IBM Plex Sans', sans-serif;
+  }
+
+  /* ── Toast ── */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--surface);
+    border: 1px solid var(--border-bright);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 13px;
+    color: var(--text);
+    transform: translateY(20px);
+    opacity: 0;
+    transition: all 0.2s;
+    z-index: 100;
+    max-width: 300px;
+  }
+
+  .toast.show {
+    transform: translateY(0);
+    opacity: 1;
+  }
+
+  .toast.success { border-color: var(--green); color: var(--green); }
+  .toast.error   { border-color: var(--red);   color: var(--red); }
+
+  .section-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 16px 0;
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Auth Screen ── -->
+<div id="auth-screen">
+  <div class="auth-box">
+    <div class="auth-logo"><span>//</span> agent.fibonatty</div>
+    <h1 class="auth-title">Личный кабинет</h1>
+    <p class="auth-sub">Управление вашим AI-ассистентом</p>
+
+    <div class="auth-tabs">
+      <button class="auth-tab active" onclick="switchTab('login')">Войти</button>
+      <button class="auth-tab" onclick="switchTab('register')">Регистрация</button>
+    </div>
+
+    <div id="tab-login">
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="login-email" placeholder="you@example.com" autocomplete="email">
+      </div>
+      <div class="field">
+        <label>Пароль</label>
+        <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <button class="btn-primary" onclick="doLogin()">Войти</button>
+    </div>
+
+    <div id="tab-register" style="display:none">
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="reg-email" placeholder="you@example.com" autocomplete="email">
+      </div>
+      <div class="field">
+        <label>Пароль</label>
+        <input type="password" id="reg-password" placeholder="Минимум 8 символов" autocomplete="new-password">
+      </div>
+      <button class="btn-primary" onclick="doRegister()">Создать аккаунт</button>
+    </div>
+
+    <div class="auth-error" id="auth-error"></div>
+  </div>
+</div>
+
+<!-- ── Cabinet Screen ── -->
+<div id="cabinet-screen">
+  <div class="topbar">
+    <div class="topbar-logo"><span>//</span> agent.fibonatty</div>
+    <div class="topbar-right">
+      <span class="user-email" id="user-email-display"></span>
+      <button class="btn-ghost" onclick="logout()">Выйти</button>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <!-- Agent status -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Агент</span>
+        <span id="agent-badge" class="badge badge-muted">—</span>
+      </div>
+
+      <div class="agent-row">
+        <div class="dot" id="status-dot"></div>
+        <div class="agent-info" id="agent-info">Загрузка...</div>
+        <button class="btn-sm" id="agent-toggle-btn" onclick="toggleAgent()" style="display:none"></button>
+      </div>
+
+      <div style="font-size:12px; color:var(--muted)" id="agent-hint"></div>
+    </div>
+
+    <!-- Model selector -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Языковая модель</span>
+      </div>
+      <div class="section-label">Выберите модель для вашего агента</div>
+      <div class="model-grid" id="model-grid"></div>
+      <button class="save-model-btn" id="save-model-btn" onclick="saveModel()">
+        Применить модель
+      </button>
+    </div>
+
+    <!-- Features -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Возможности</span>
+      </div>
+      <div class="features-grid" id="features-grid"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let token = localStorage.getItem('token');
+let userId = null;
+let statusData = null;
+let selectedModel = null;
+let currentModel = null;
+
+// ── Init ───────────────────────────────────────────────────────────────────
+(async function init() {
+  // Check for google=connected redirect
+  const params = new URLSearchParams(location.search);
+  if (params.get('google') === 'connected') {
+    history.replaceState({}, '', '/');
+    if (token) toast('Google успешно подключён', 'success');
+  }
+
+  if (token) {
+    try {
+      const me = await api('GET', '/auth/me');
+      userId = me.user_id;
+      document.getElementById('user-email-display').textContent = me.email;
+      showCabinet();
+      await loadStatus();
+    } catch {
+      localStorage.removeItem('token');
+      token = null;
+    }
+  }
+})();
+
+// ── Auth ───────────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.getElementById('tab-login').style.display    = tab === 'login'    ? '' : 'none';
+  document.getElementById('tab-register').style.display = tab === 'register' ? '' : 'none';
+  document.querySelectorAll('.auth-tab').forEach((el, i) => {
+    el.classList.toggle('active', (i === 0) === (tab === 'login'));
+  });
+  document.getElementById('auth-error').style.display = 'none';
+}
+
+async function doLogin() {
+  const email    = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  try {
+    const data = await api('POST', '/auth/login', { email, password });
+    onAuth(data);
+  } catch (e) {
+    showAuthError(e.message);
+  }
+}
+
+async function doRegister() {
+  const email    = document.getElementById('reg-email').value.trim();
+  const password = document.getElementById('reg-password').value;
+  try {
+    const data = await api('POST', '/auth/register', { email, password });
+    onAuth(data);
+  } catch (e) {
+    showAuthError(e.message);
+  }
+}
+
+function onAuth(data) {
+  token = data.token;
+  userId = data.user_id;
+  localStorage.setItem('token', token);
+  document.getElementById('user-email-display').textContent = data.email;
+  showCabinet();
+  loadStatus();
+}
+
+function logout() {
+  localStorage.removeItem('token');
+  location.reload();
+}
+
+function showAuthError(msg) {
+  const el = document.getElementById('auth-error');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+// ── Cabinet ────────────────────────────────────────────────────────────────
+function showCabinet() {
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('cabinet-screen').style.display = 'block';
+}
+
+async function loadStatus() {
+  try {
+    statusData = await api('GET', '/cabinet/status');
+    renderStatus();
+    renderModels();
+    renderFeatures();
+  } catch (e) {
+    console.error('loadStatus error', e);
+  }
+}
+
+function renderStatus() {
+  const inst = statusData.instance;
+  const dot  = document.getElementById('status-dot');
+  const info = document.getElementById('agent-info');
+  const badge = document.getElementById('agent-badge');
+  const toggleBtn = document.getElementById('agent-toggle-btn');
+  const hint = document.getElementById('agent-hint');
+
+  if (!inst) {
+    dot.className = 'dot dot-red';
+    info.innerHTML = 'Агент не создан';
+    badge.textContent = 'нет';
+    badge.className = 'badge badge-muted';
+    hint.textContent = 'Обратитесь к администратору для подключения';
+    toggleBtn.style.display = 'none';
+    return;
+  }
+
+  const status = inst.status;
+  if (status === 'running') {
+    dot.className = 'dot dot-green';
+    badge.textContent = 'работает';
+    badge.className = 'badge badge-green';
+    toggleBtn.textContent = 'Остановить';
+    toggleBtn.className = 'btn-sm danger';
+    hint.textContent = 'Напишите вашему боту в Telegram';
+  } else if (status === 'stopped') {
+    dot.className = 'dot dot-red';
+    badge.textContent = 'остановлен';
+    badge.className = 'badge badge-red';
+    toggleBtn.textContent = 'Запустить';
+    toggleBtn.className = 'btn-sm';
+    hint.textContent = 'Агент остановлен — запустите его чтобы начать работу';
+  } else {
+    dot.className = 'dot dot-yellow';
+    badge.textContent = status;
+    badge.className = 'badge badge-yellow';
+    toggleBtn.style.display = 'none';
+  }
+
+  const modelName = statusData.models.find(m => m.id === inst.llm_model)?.name || inst.llm_model || '—';
+  info.innerHTML = `<strong>${inst.container_name}</strong> · ${modelName}`;
+  toggleBtn.style.display = 'inline-block';
+}
+
+async function toggleAgent() {
+  const inst = statusData?.instance;
+  if (!inst) return;
+  const action = inst.status === 'running' ? 'stop' : 'start';
+  try {
+    await api('POST', `/cabinet/agent/${action}`);
+    await loadStatus();
+    toast(action === 'stop' ? 'Агент остановлен' : 'Агент запускается...', 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+// ── Models ─────────────────────────────────────────────────────────────────
+function renderModels() {
+  currentModel = statusData.instance?.llm_model || statusData.default_model;
+  selectedModel = currentModel;
+
+  const grid = document.getElementById('model-grid');
+  grid.innerHTML = statusData.models.map(m => `
+    <button class="model-card ${m.id === currentModel ? 'selected' : ''}"
+            onclick="selectModel('${m.id}')" data-id="${m.id}">
+      <span class="model-check">✓</span>
+      <div class="model-name">${m.name}</div>
+      <div class="model-desc">${m.description}</div>
+    </button>
+  `).join('');
+}
+
+function selectModel(id) {
+  selectedModel = id;
+  document.querySelectorAll('.model-card').forEach(el => {
+    el.classList.toggle('selected', el.dataset.id === id);
+  });
+  const saveBtn = document.getElementById('save-model-btn');
+  saveBtn.classList.toggle('visible', id !== currentModel);
+}
+
+async function saveModel() {
+  if (!selectedModel || selectedModel === currentModel) return;
+  const btn = document.getElementById('save-model-btn');
+  btn.textContent = 'Применяется...';
+  btn.disabled = true;
+  try {
+    await api('POST', '/cabinet/model', { llm_model: selectedModel });
+    currentModel = selectedModel;
+    btn.classList.remove('visible');
+    toast('Модель изменена, агент перезапускается', 'success');
+    setTimeout(loadStatus, 3000);
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.textContent = 'Применить модель';
+    btn.disabled = false;
+  }
+}
+
+// ── Features ───────────────────────────────────────────────────────────────
+function renderFeatures() {
+  const features = statusData.features;
+  const grid = document.getElementById('features-grid');
+
+  grid.innerHTML = Object.entries(features).map(([key, f]) => {
+    let action = '';
+    if (f.soon) {
+      action = `<span class="badge badge-muted">скоро</span>`;
+    } else if (key === 'google') {
+      if (f.enabled) {
+        action = `<button class="btn-disconnect" onclick="disconnectGoogle()">Отключить</button>`;
+      } else {
+        action = `<button class="btn-connect" onclick="connectGoogle()">Подключить</button>`;
+      }
+    } else if (f.enabled) {
+      action = `<span class="badge badge-green">активно</span>`;
+    }
+
+    return `
+      <div class="feature-row">
+        <div>
+          <div class="feature-label">${f.label}</div>
+          ${f.soon ? '<div class="feature-soon">в разработке</div>' : ''}
+        </div>
+        <div class="feature-action">${action}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function connectGoogle() {
+  if (!userId) return;
+  window.location.href = `/oauth/google/start/${userId}`;
+}
+
+async function disconnectGoogle() {
+  if (!userId) return;
+  try {
+    await api('DELETE', `/oauth/google/${userId}`);
+    await loadStatus();
+    toast('Google отключён', 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+// ── Utils ──────────────────────────────────────────────────────────────────
+async function api(method, path, body) {
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+  };
+  if (token) opts.headers['Authorization'] = `Bearer ${token}`;
+  if (body)  opts.body = JSON.stringify(body);
+
+  const res = await fetch(path, opts);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
+  return data;
+}
+
+function toast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `toast ${type} show`;
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// Enter key в формах
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const loginTab = document.getElementById('tab-login');
+  if (loginTab.style.display !== 'none') doLogin();
+  else doRegister();
+});
+</script>
+</body>
+</html>

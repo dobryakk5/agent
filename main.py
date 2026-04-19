@@ -5,16 +5,20 @@ from contextlib import asynccontextmanager
 import asyncpg
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse, RedirectResponse
 from pydantic import BaseModel
 
+from google_oauth import build_auth_url, exchange_code_for_tokens, write_tokens_to_container
+from auth import auth_router
+from cabinet import cabinet_router
+from google_oauth import build_auth_url, exchange_code_for_tokens, connect_google, disconnect_google
 from docker_manager import (
     create_instance,
     recreate_container,
     remove_instance,
     stop_instance,
 )
-from metrics import collect_metrics_loop
+from metrics import collect_metrics_loop, auto_stop_loop
 
 load_dotenv()
 
@@ -82,24 +86,34 @@ def resolve_telegram_token(
 async def lifespan(app: FastAPI):
     app.state.pool = await asyncpg.create_pool(DB_URL)
     app.state.metrics_task = asyncio.create_task(collect_metrics_loop(DB_URL))
+    app.state.auto_stop_task = asyncio.create_task(auto_stop_loop(DB_URL))
     try:
         yield
     finally:
-        task = getattr(app.state, "metrics_task", None)
-        if task:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+        for task_name in ("metrics_task", "auto_stop_task"):
+            task = getattr(app.state, task_name, None)
+            if task:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
         await app.state.pool.close()
 
 
 app = FastAPI(lifespan=lifespan)
 
+app.include_router(auth_router)
+app.include_router(cabinet_router)
+
 
 @app.get("/")
 async def dashboard():
+    return FileResponse("cabinet.html")
+
+
+@app.get("/admin")
+async def admin_dashboard():
     return FileResponse("dashboard.html")
 
 
@@ -277,6 +291,153 @@ async def list_instances():
         """
     )
     return [dict(r) for r in rows]
+
+
+
+# ─── Google OAuth ──────────────────────────────────────────────────────────────
+
+@app.get("/oauth/google/start/{user_id}")
+async def google_oauth_start(user_id: int):
+    """Редиректим пользователя на Google для авторизации."""
+    pool = app.state.pool
+    row = await pool.fetchrow(
+        "SELECT user_id FROM user_instances WHERE user_id = $1", user_id
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Instance not found")
+
+    url = build_auth_url(user_id)
+    return RedirectResponse(url)
+
+
+@app.get("/oauth/google/callback")
+async def google_oauth_callback(code: str = "", state: str = "", error: str = ""):
+    """Google редиректит сюда после авторизации пользователя."""
+    if error:
+        return {"error": error, "detail": "Google OAuth denied or failed"}
+
+    if not code or not state:
+        raise HTTPException(status_code=400, detail="Missing code or state")
+
+    try:
+        user_id = int(state)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid state (user_id)")
+
+    # Меняем code на токены
+    tokens = await exchange_code_for_tokens(code)
+
+    # Сохраняем в БД для истории и возможного пересоздания контейнера
+    pool = app.state.pool
+    await pool.execute(
+        """
+        UPDATE user_instances
+        SET google_connected = true,
+            google_connected_at = now()
+        WHERE user_id = $1
+        """,
+        user_id,
+    )
+
+    # Кладём токены прямо в контейнер
+    write_tokens_to_container(user_id, tokens)
+
+    return {
+        "ok": True,
+        "user_id": user_id,
+        "message": "Google connected. Agent now has access to Gmail, Calendar and Drive.",
+        "scopes": tokens.get("scope", ""),
+    }
+
+
+@app.delete("/oauth/google/{user_id}")
+async def google_oauth_disconnect(user_id: int):
+    """Отключаем Google — удаляем токены из контейнера."""
+    import docker
+    client = docker.from_env()
+    container_name = f"agent_user_{user_id}"
+
+    try:
+        container = client.containers.get(container_name)
+        container.exec_run("rm -f /root/.openclaw/secrets/google-tokens.json")
+
+        # Деактивируем плагин в конфиге
+        deactivate_script = """
+import json
+path = '/root/.openclaw/openclaw.json'
+with open(path) as f:
+    c = json.load(f)
+entries = c.get('plugins', {}).get('entries', {})
+if 'openclaw-google-workspace' in entries:
+    entries['openclaw-google-workspace']['enabled'] = False
+with open(path, 'w') as f:
+    json.dump(c, f, indent=2)
+print('ok')
+"""
+        container.exec_run(["python3", "-c", deactivate_script])
+    except docker.errors.NotFound:
+        pass
+
+    pool = app.state.pool
+    await pool.execute(
+        "UPDATE user_instances SET google_connected = false, google_connected_at = NULL WHERE user_id = $1",
+        user_id,
+    )
+
+    return {"ok": True}
+
+
+
+# ─── Google OAuth ──────────────────────────────────────────────────────────────
+
+@app.get("/oauth/google/start/{user_id}")
+async def google_oauth_start(user_id: int, request: Request):
+    pool = request.app.state.pool
+    row = await pool.fetchrow(
+        "SELECT user_id FROM user_instances WHERE user_id = $1", user_id
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Instance not found")
+    return RedirectResponse(build_auth_url(user_id))
+
+
+@app.get("/oauth/google/callback")
+async def google_oauth_callback(
+    request: Request,
+    code: str = "",
+    state: str = "",
+    error: str = "",
+):
+    if error:
+        return {"error": error}
+    if not code or not state:
+        raise HTTPException(status_code=400, detail="Missing code or state")
+    try:
+        user_id = int(state)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid state")
+
+    tokens = await exchange_code_for_tokens(code)
+    connect_google(user_id, tokens)
+
+    pool = request.app.state.pool
+    await pool.execute(
+        "UPDATE user_instances SET google_connected=true, google_connected_at=now() WHERE user_id=$1",
+        user_id,
+    )
+    # Редиректим обратно в кабинет
+    return RedirectResponse("/?google=connected")
+
+
+@app.delete("/oauth/google/{user_id}")
+async def google_oauth_disconnect(user_id: int, request: Request):
+    disconnect_google(user_id)
+    pool = request.app.state.pool
+    await pool.execute(
+        "UPDATE user_instances SET google_connected=false, google_connected_at=NULL WHERE user_id=$1",
+        user_id,
+    )
+    return {"ok": True}
 
 
 @app.get("/metrics/{user_id}")
