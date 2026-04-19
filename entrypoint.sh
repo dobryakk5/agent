@@ -11,7 +11,7 @@ MEMORY_FILE="$WORKSPACE/MEMORY.md"
 
 mkdir -p "$CONFIG_DIR" "$WORKSPACE" "$MEMORY_DIR"
 
-: "${PLATFORM:=anthropic}"
+: "${PLATFORM:=openrouter}"
 : "${API_KEY:?API_KEY is required}"
 : "${LLM_MODEL:?LLM_MODEL is required}"
 
@@ -22,11 +22,16 @@ case "$PLATFORM" in
   openai)
     ENV_KEY="OPENAI_API_KEY"
     ;;
-  anthropic|*)
+  anthropic)
     ENV_KEY="ANTHROPIC_API_KEY"
+    ;;
+  *)
+    echo "[entrypoint] Unsupported PLATFORM: $PLATFORM" >&2
+    exit 1
     ;;
 esac
 
+# Важно: ключ нужен и в конфиге OpenClaw, и в окружении самого процесса
 export "${ENV_KEY}=${API_KEY}"
 
 TG_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
@@ -38,7 +43,7 @@ if [ -n "$TG_TOKEN" ]; then
       "enabled": true,
       "dmPolicy": "open",
       "allowFrom": ["*"],
-      "streaming": "partial",
+      "streaming": "off",
       "accounts": {
         "default": {
           "botToken": "${TG_TOKEN}"
@@ -59,7 +64,7 @@ EOF
 )
 fi
 
-cat > "$CONFIG_FILE" <<CONF
+cat > "$CONFIG_FILE" <<EOF
 {
   "gateway": {
     "mode": "local"
@@ -84,47 +89,48 @@ ${TELEGRAM_BLOCK}
     "noSandbox": true
   }
 }
-CONF
+EOF
 
 echo "[entrypoint] Platform: $PLATFORM"
 echo "[entrypoint] Model: $LLM_MODEL"
 echo "[entrypoint] Workspace: $WORKSPACE"
+echo "[entrypoint] Provider env key: $ENV_KEY"
 echo "[entrypoint] Telegram enabled: $( [ -n "$TG_TOKEN" ] && echo yes || echo no )"
 echo "[entrypoint] Config written to $CONFIG_FILE"
 
 if [ ! -f "$AGENTS_FILE" ]; then
-cat > "$AGENTS_FILE" <<'AGENTS'
+cat > "$AGENTS_FILE" <<'EOF'
 # Personal Assistant Instructions
 
 You are a personal AI assistant. Your primary goal is to help the user with any tasks they request.
 
 ## Memory Rules
-- Before responding to any request, always check whether there is relevant stored context.
-- After every conversation where something important is shared, write it to memory files.
-- Save user preferences, decisions, and important facts to MEMORY.md.
-- Write daily activity logs to memory/YYYY-MM-DD.md.
+- Before responding, check whether there is relevant stored context.
+- After important conversations, write useful facts to memory files.
+- Save long-term facts to MEMORY.md.
+- Save daily notes to memory/YYYY-MM-DD.md.
 
 ## What to Remember
 - User preferences
-- Ongoing projects and their status
-- Decisions made and why
-- Recurring tasks and schedules
-- Important personal context
+- Ongoing projects and status
+- Decisions and rationale
+- Repeating tasks
+- Useful personal context
 
 ## Browser Usage
-- Before browser actions, start the browser runtime if needed.
-- Stop it when done to save resources.
+- Start browser runtime only when needed.
+- Stop it after use to save resources.
 - Confirm before submitting forms or purchases.
 
 ## Communication Style
 - Be concise and direct in Telegram.
 - Use bullet points for lists.
-- Ask for clarification when needed.
-AGENTS
+- Ask clarifying questions when needed.
+EOF
 fi
 
 if [ ! -f "$MEMORY_FILE" ]; then
-cat > "$MEMORY_FILE" <<'MEMORY'
+cat > "$MEMORY_FILE" <<'EOF'
 # Long-term Memory
 
 ## User Preferences
@@ -135,7 +141,7 @@ cat > "$MEMORY_FILE" <<'MEMORY'
 
 ## Important Facts
 (will be filled over time)
-MEMORY
+EOF
 fi
 
 exec openclaw gateway
