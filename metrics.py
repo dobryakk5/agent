@@ -3,6 +3,7 @@ import asyncpg
 from docker_manager import get_raw_stats
 
 COLLECT_INTERVAL = 30  # секунд
+AUTO_STOP_IDLE_MINUTES = int(__import__("os").environ.get("AUTO_STOP_IDLE_MINUTES", "60"))
 
 
 def parse_stats(stats: dict) -> dict:
@@ -41,6 +42,7 @@ def parse_stats(stats: dict) -> dict:
 
 async def collect_metrics_loop(db_url: str):
     pool = await asyncpg.create_pool(db_url)
+    loop = asyncio.get_running_loop()
 
     while True:
         try:
@@ -50,7 +52,10 @@ async def collect_metrics_loop(db_url: str):
                 )
 
             for row in instances:
-                stats = get_raw_stats(row["container_name"])
+                # get_raw_stats is a blocking Docker SDK call — run in executor
+                stats = await loop.run_in_executor(
+                    None, lambda name=row["container_name"]: get_raw_stats(name)
+                )
                 if not stats:
                     continue
 
@@ -76,3 +81,44 @@ async def collect_metrics_loop(db_url: str):
             print(f"[metrics] error: {e}")
 
         await asyncio.sleep(COLLECT_INTERVAL)
+
+
+async def auto_stop_loop(db_url: str):
+    """Stop instances that have been idle (no Telegram activity) for AUTO_STOP_IDLE_MINUTES."""
+    from docker_manager import stop_instance  # local import to avoid circular
+
+    pool = await asyncpg.create_pool(db_url)
+    loop = asyncio.get_running_loop()
+
+    while True:
+        try:
+            async with pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT i.user_id
+                    FROM user_instances i
+                    LEFT JOIN telegram_links l ON l.user_id = i.user_id
+                    WHERE i.status = 'running'
+                      AND (
+                            l.last_seen_at IS NULL
+                            OR l.last_seen_at < now() - ($1 * interval '1 minute')
+                          )
+                    """,
+                    AUTO_STOP_IDLE_MINUTES,
+                )
+
+            for row in rows:
+                try:
+                    await loop.run_in_executor(None, lambda uid=row["user_id"]: stop_instance(uid))
+                    async with pool.acquire() as conn:
+                        await conn.execute(
+                            "UPDATE user_instances SET status='stopped', stopped_at=now() WHERE user_id=$1",
+                            row["user_id"],
+                        )
+                    print(f"[auto_stop] stopped idle instance for user {row['user_id']}")
+                except Exception as e:
+                    print(f"[auto_stop] error stopping user {row['user_id']}: {e}")
+        except Exception as e:
+            print(f"[auto_stop] error: {e}")
+
+        await asyncio.sleep(60)

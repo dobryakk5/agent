@@ -302,8 +302,8 @@
       </div>
 
       <div class="field">
-        <label>Telegram Token</label>
-        <input id="f-tg" type="password" placeholder="7123...:AAF..." />
+        <label>Telegram</label>
+        <input id="f-tg" type="text" placeholder="Единый бот задаётся в .env backend" disabled />
       </div>
 
     </div>
@@ -418,6 +418,7 @@ onPlatformChange();
 // ── API ──────────────────────────────────────────────────────────────────────
 
 let charts = {};
+const token = localStorage.getItem('token') || '';
 
 function toast(msg, type = 'success') {
   const t = document.getElementById('toast');
@@ -427,7 +428,9 @@ function toast(msg, type = 'success') {
 }
 
 async function api(path, opts = {}) {
-  const r = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const r = await fetch(path, { ...opts, headers });
   if (!r.ok) {
     const err = await r.json().catch(() => ({}));
     throw new Error(err.detail || r.statusText);
@@ -488,14 +491,13 @@ async function provision() {
   const platform = document.getElementById('f-platform').value;
   const key = document.getElementById('f-key').value.trim();
   const model = document.getElementById('f-model').value.trim();
-  const tg = document.getElementById('f-tg').value.trim();
 
   if (!uid || !model) return toast('Укажи User ID и модель', 'error');
 
   try {
     await api('/provision', {
       method: 'POST',
-      body: JSON.stringify({ user_id: uid, platform, api_key: key, llm_model: model, telegram_bot_token: tg })
+      body: JSON.stringify({ user_id: uid, platform, api_key: key, llm_model: model })
     });
     toast(`Инстанс ${uid} запущен (${platform} / ${model})`);
     loadInstances();

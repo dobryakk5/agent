@@ -1,0 +1,13 @@
+{
+  "name": "yax",
+  "version": "2.1.0",
+  "description": "Yandex 360 CLI для OpenClaw: Диск, Календарь, Почта, Telemost",
+  "main": "src/yax.js",
+  "bin": { "yax": "src/yax.js" },
+  "dependencies": {
+    "nodemailer": "^6.9.9",
+    "imapflow": "^1.0.164"
+  },
+  "engines": { "node": ">=18" },
+  "license": "MIT"
+}

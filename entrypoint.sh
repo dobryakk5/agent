@@ -9,93 +9,121 @@ MEMORY_DIR="$WORKSPACE/memory"
 AGENTS_FILE="$WORKSPACE/AGENTS.md"
 MEMORY_FILE="$WORKSPACE/MEMORY.md"
 
-mkdir -p "$CONFIG_DIR" "$WORKSPACE" "$MEMORY_DIR"
+mkdir -p "$CONFIG_DIR" "$WORKSPACE" "$MEMORY_DIR" "/run/secrets/user" "/run/secrets/app"
 
 : "${PLATFORM:=openrouter}"
 : "${API_KEY:?API_KEY is required}"
 : "${LLM_MODEL:?LLM_MODEL is required}"
+: "${GATEWAY_AUTH_TOKEN:?GATEWAY_AUTH_TOKEN is required}"
+: "${GOOGLE_OAUTH_JSON_PATH:=/run/secrets/app/google-oauth.json}"
+: "${GOOGLE_TOKENS_JSON_PATH:=/run/secrets/user/google-tokens.json}"
 
 case "$PLATFORM" in
-  openrouter)
-    ENV_KEY="OPENROUTER_API_KEY"
-    ;;
-  openai)
-    ENV_KEY="OPENAI_API_KEY"
-    ;;
-  anthropic)
-    ENV_KEY="ANTHROPIC_API_KEY"
-    ;;
+  openrouter) ENV_KEY="OPENROUTER_API_KEY" ;;
+  openai)     ENV_KEY="OPENAI_API_KEY"     ;;
+  anthropic)  ENV_KEY="ANTHROPIC_API_KEY"  ;;
   *)
     echo "[entrypoint] Unsupported PLATFORM: $PLATFORM" >&2
     exit 1
     ;;
 esac
 
-# Важно: ключ нужен и в конфиге OpenClaw, и в окружении самого процесса
 export "${ENV_KEY}=${API_KEY}"
 
-TG_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
+# Generate openclaw.json entirely in Python so that API_KEY, LLM_MODEL,
+# GATEWAY_AUTH_TOKEN and other values cannot inject into the JSON structure
+# regardless of what characters they contain.
+# Google Workspace plugin patch is done in the same pass.
+python3 - <<'PY'
+import json, os, sys
 
-if [ -n "$TG_TOKEN" ]; then
-  TELEGRAM_BLOCK=$(cat <<EOF
-  "channels": {
-    "telegram": {
-      "enabled": true,
-      "dmPolicy": "open",
-      "allowFrom": ["*"],
-      "streaming": "off",
-      "accounts": {
-        "default": {
-          "botToken": "${TG_TOKEN}"
-        }
-      }
-    }
-  },
-EOF
-)
-else
-  TELEGRAM_BLOCK=$(cat <<EOF
-  "channels": {
-    "telegram": {
-      "enabled": false
-    }
-  },
-EOF
-)
-fi
+platform           = os.environ["PLATFORM"]
+api_key            = os.environ["API_KEY"]
+llm_model          = os.environ["LLM_MODEL"]
+gateway_auth_token = os.environ["GATEWAY_AUTH_TOKEN"]
+workspace          = os.environ.get("WORKSPACE", "/workspace")
+google_oauth_path  = os.environ.get("GOOGLE_OAUTH_JSON_PATH", "/run/secrets/app/google-oauth.json")
+google_tokens_path = os.environ.get("GOOGLE_TOKENS_JSON_PATH", "/run/secrets/user/google-tokens.json")
+config_file        = "/root/.openclaw/openclaw.json"
 
-cat > "$CONFIG_FILE" <<EOF
-{
-  "gateway": {
-    "mode": "local"
-  },
-  "env": {
-    "${ENV_KEY}": "${API_KEY}"
-  },
-  "agents": {
-    "defaults": {
-      "workspace": "${WORKSPACE}",
-      "model": {
-        "primary": "${LLM_MODEL}"
-      },
-      "timeoutSeconds": 120
-    }
-  },
-${TELEGRAM_BLOCK}
-  "browser": {
-    "enabled": false,
-    "executablePath": "/usr/bin/chromium",
-    "headless": true,
-    "noSandbox": true
-  }
+env_key_map = {
+    "openrouter": "OPENROUTER_API_KEY",
+    "openai":     "OPENAI_API_KEY",
+    "anthropic":  "ANTHROPIC_API_KEY",
 }
-EOF
+env_key = env_key_map[platform]  # already validated by shell case above
+
+cfg = {
+    "gateway": {
+        "mode": "local",
+        "bind": "lan",
+        "port": 18789,
+        "auth": {
+            "mode": "token",
+            "token": gateway_auth_token,
+        },
+        "http": {
+            "endpoints": {
+                "responses": {
+                    "enabled": True,
+                    "files":  {"allowUrl": False},
+                    "images": {"allowUrl": False},
+                },
+                "chatCompletions": {"enabled": False},
+            }
+        },
+    },
+    "env": {env_key: api_key},
+    "agents": {
+        "defaults": {
+            "workspace": workspace,
+            "model": {"primary": llm_model},
+            "timeoutSeconds": 120,
+        }
+    },
+    "channels": {"telegram": {"enabled": False}},
+    "browser": {
+        "enabled": False,
+        "executablePath": "/usr/bin/chromium",
+        "headless": True,
+        "noSandbox": True,
+    },
+    "plugins": {"allow": [], "entries": {}},
+    "tools":   {"allow": []},
+}
+
+if os.path.isfile(google_oauth_path):
+    plugin_name = "openclaw-google-workspace"
+    cfg["plugins"]["allow"].append(plugin_name)
+    cfg["tools"]["allow"].append(plugin_name)
+    cfg["plugins"]["entries"][plugin_name] = {
+        "enabled": True,
+        "config": {
+            "credentialsPath": google_oauth_path,
+            "tokenPath": google_tokens_path,
+            "services": {
+                "gmail":    {"enabled": True, "readOnly": True},
+                "calendar": {"enabled": True, "readOnly": False},
+                "drive":    {"enabled": True, "readOnly": True},
+                "docs":     {"enabled": True, "readOnly": True},
+                "sheets":   {"enabled": True, "readOnly": True},
+                "tasks":    {"enabled": True, "readOnly": False},
+                "contacts": {"enabled": True, "readOnly": True},
+            },
+        },
+    }
+
+with open(config_file, "w", encoding="utf-8") as f:
+    json.dump(cfg, f, ensure_ascii=False, indent=2)
+PY
 
 echo "[entrypoint] Platform: $PLATFORM"
 echo "[entrypoint] Model: $LLM_MODEL"
 echo "[entrypoint] Workspace: $WORKSPACE"
 echo "[entrypoint] Provider env key: $ENV_KEY"
-echo "[entrypoint] Telegram enabled: $( [ -n "$TG_TOKEN" ] && echo yes || echo no )"
+echo "[entrypoint] HTTP Responses enabled: yes"
+echo "[entrypoint] Native Telegram channel: disabled"
+echo "[entrypoint] Google OAuth config mounted: $( [ -f "$GOOGLE_OAUTH_JSON_PATH" ] && echo yes || echo no )"
 echo "[entrypoint] Config written to $CONFIG_FILE"
 
 if [ ! -f "$AGENTS_FILE" ]; then
@@ -142,6 +170,22 @@ cat > "$MEMORY_FILE" <<'EOF'
 ## Important Facts
 (will be filled over time)
 EOF
+fi
+
+
+# ── Yandex 360 (yax) ─────────────────────────────────────────────────────────
+YAX_TOKEN_SRC="/run/secrets/user/yax-token.json"
+YAX_DIR="/root/.openclaw/yax"
+if [ -f "$YAX_TOKEN_SRC" ]; then
+    mkdir -p "$YAX_DIR"
+    cp "$YAX_TOKEN_SRC" "$YAX_DIR/token.json"
+    chmod 600 "$YAX_DIR/token.json"
+    # config.json нужен yax.js для автообновления токена
+    printf '{"client_id":"%s","client_secret":"%s"}' \
+        "${YANDEX_CLIENT_ID:-}" "${YANDEX_CLIENT_SECRET:-}" > "$YAX_DIR/config.json"
+    echo "[entrypoint] Yandex 360: токен смонтирован"
+else
+    echo "[entrypoint] Yandex 360: не подключён"
 fi
 
 exec openclaw gateway
