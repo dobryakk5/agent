@@ -1,46 +1,64 @@
+import asyncio
 import os
+import smtplib
+from email.message import EmailMessage
+from email.utils import formataddr
 
-import httpx
+BREVO_SMTP_HOST = os.environ.get("BREVO_SMTP_HOST", "smtp-relay.brevo.com")
+BREVO_SMTP_PORT = int(os.environ.get("BREVO_SMTP_PORT", "587"))
+BREVO_SMTP_LOGIN = os.environ.get("BREVO_SMTP_LOGIN", "")
+BREVO_SMTP_PASSWORD = os.environ.get("BREVO_SMTP_PASSWORD", "")
+BREVO_FROM = os.environ.get("BREVO_FROM", "")
+BREVO_FROM_NAME = os.environ.get("BREVO_FROM_NAME", "AI Assistant")
 
-MAILGUN_API_KEY  = os.environ.get("MAILGUN_API_KEY", "")
-MAILGUN_DOMAIN   = os.environ.get("MAILGUN_DOMAIN", "")
-MAILGUN_FROM     = os.environ.get("MAILGUN_FROM", "")
-MAILGUN_API_BASE = os.environ.get("MAILGUN_API_BASE", "https://api.mailgun.net").rstrip("/")
 
-
-class MailgunConfigError(RuntimeError):
+class BrevoConfigError(RuntimeError):
     pass
 
 
 def _ensure_config() -> None:
-    if not MAILGUN_API_KEY:
-        raise MailgunConfigError("MAILGUN_API_KEY is not set")
-    if not MAILGUN_DOMAIN:
-        raise MailgunConfigError("MAILGUN_DOMAIN is not set")
+    if not BREVO_SMTP_LOGIN:
+        raise BrevoConfigError("BREVO_SMTP_LOGIN is not set")
+    if not BREVO_SMTP_PASSWORD:
+        raise BrevoConfigError("BREVO_SMTP_PASSWORD is not set")
+    if not BREVO_FROM:
+        raise BrevoConfigError("BREVO_FROM is not set")
 
 
 def _from_address() -> str:
-    return MAILGUN_FROM or f"noreply@{MAILGUN_DOMAIN}"
+    # Brevo requires the From address to be a verified sender in your account.
+    return formataddr((BREVO_FROM_NAME, BREVO_FROM)) if BREVO_FROM_NAME else BREVO_FROM
+
+
+def _send_email_sync(*, to: str, subject: str, text: str, html: str | None = None) -> None:
+    _ensure_config()
+
+    msg = EmailMessage()
+    msg["From"] = _from_address()
+    msg["To"] = to
+    msg["Subject"] = subject
+    msg.set_content(text)
+
+    if html:
+        msg.add_alternative(html, subtype="html")
+
+    if BREVO_SMTP_PORT == 465:
+        with smtplib.SMTP_SSL(BREVO_SMTP_HOST, BREVO_SMTP_PORT, timeout=15) as smtp:
+            smtp.login(BREVO_SMTP_LOGIN, BREVO_SMTP_PASSWORD)
+            smtp.send_message(msg)
+        return
+
+    with smtplib.SMTP(BREVO_SMTP_HOST, BREVO_SMTP_PORT, timeout=15) as smtp:
+        smtp.ehlo()
+        smtp.starttls()
+        smtp.ehlo()
+        smtp.login(BREVO_SMTP_LOGIN, BREVO_SMTP_PASSWORD)
+        smtp.send_message(msg)
 
 
 async def send_email(*, to: str, subject: str, text: str, html: str | None = None) -> None:
-    _ensure_config()
-    data: dict = {
-        "from":    _from_address(),
-        "to":      to,
-        "subject": subject,
-        "text":    text,
-    }
-    if html:
-        data["html"] = html
-
-    async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.post(
-            f"{MAILGUN_API_BASE}/v3/{MAILGUN_DOMAIN}/messages",
-            auth=("api", MAILGUN_API_KEY),
-            data=data,
-        )
-        r.raise_for_status()
+    # smtplib is blocking, so run it outside the event loop.
+    await asyncio.to_thread(_send_email_sync, to=to, subject=subject, text=text, html=html)
 
 
 async def send_password_reset_email(to_email: str, reset_url: str) -> None:

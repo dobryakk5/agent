@@ -66,6 +66,12 @@ psql -U postgres -d openclaw_admin -f schema.sql
 DATABASE_URL=postgresql://postgres:your_password@localhost:5432/openclaw_admin
 JWT_SECRET=change-me
 ADMIN_EMAILS=admin@example.com
+BREVO_SMTP_HOST=smtp-relay.brevo.com
+BREVO_SMTP_PORT=587
+BREVO_SMTP_LOGIN=your-brevo-login@smtp-brevo.com
+BREVO_SMTP_PASSWORD=your_brevo_smtp_key_or_password
+BREVO_FROM=noreply@your-domain.example
+BREVO_FROM_NAME=AI Assistant
 GOOGLE_OAUTH_JSON_PATH=/srv/openclaw/secrets/google-oauth.json
 GOOGLE_REDIRECT_URI=https://your-domain.example/oauth/google/callback
 TELEGRAM_BOT_TOKEN=7123456789:AAFxxxxxxx
@@ -73,6 +79,8 @@ TELEGRAM_BOT_USERNAME=YourBotNameWithoutAt
 TELEGRAM_WEBHOOK_URL=https://your-domain.example/telegram/webhook
 TELEGRAM_WEBHOOK_SECRET=replace-with-random-string
 ```
+
+Для отправки писем сброса пароля теперь используется `Brevo SMTP`. Адрес в `BREVO_FROM` должен быть заранее подтверждён в аккаунте Brevo.
 
 ---
 

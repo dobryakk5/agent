@@ -158,7 +158,7 @@ class ResetRequest(BaseModel):
 async def password_forgot(req: ForgotRequest, request: Request):
     """Send a password-reset email. Always returns 200 to avoid leaking whether
     an email is registered."""
-    from mailgun import MailgunConfigError, send_password_reset_email
+    from brevo import BrevoConfigError, send_password_reset_email
 
     pool = request.app.state.pool
 
@@ -190,7 +190,7 @@ async def password_forgot(req: ForgotRequest, request: Request):
 
     try:
         await send_password_reset_email(req.email, reset_url)
-    except MailgunConfigError as exc:
+    except BrevoConfigError as exc:
         raise HTTPException(status_code=500, detail=f"Mail service not configured: {exc}") from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to send email: {exc}") from exc
