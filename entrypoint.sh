@@ -107,8 +107,6 @@ if os.path.isfile(google_oauth_path):
                 "drive":    {"enabled": True, "readOnly": True},
                 "docs":     {"enabled": True, "readOnly": True},
                 "sheets":   {"enabled": True, "readOnly": True},
-                "tasks":    {"enabled": True, "readOnly": False},
-                "contacts": {"enabled": True, "readOnly": True},
             },
         },
     }

@@ -1,4 +1,3 @@
-
 """
 Авторизация: регистрация, логин, JWT сессии.
 Подключается к main.py через app.include_router(auth_router).
@@ -7,11 +6,13 @@
 import os
 import secrets as _secrets
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import bcrypt
 import jwt
+from email_validator import EmailNotValidError, validate_email
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 
 SECRET_KEY = os.environ.get("JWT_SECRET", "change-me-in-production")
 ALGORITHM = "HS256"
@@ -50,6 +51,34 @@ def create_token(user_id: int, email: str) -> str:
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
+def normalize_email_or_400(value: Any) -> str:
+    """Проверяет email и возвращает понятную 400-ошибку вместо FastAPI 422."""
+    if not isinstance(value, str) or not value.strip():
+        raise HTTPException(status_code=400, detail="Введите email")
+
+    try:
+        checked = validate_email(value.strip(), check_deliverability=False)
+    except EmailNotValidError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="Введите корректный email, например user@example.com",
+        ) from exc
+
+    return checked.normalized.lower()
+
+
+def require_password_or_400(value: Any) -> str:
+    if not isinstance(value, str) or not value:
+        raise HTTPException(status_code=400, detail="Введите пароль")
+    return value
+
+
+def require_token_or_400(value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise HTTPException(status_code=400, detail="Некорректная ссылка сброса пароля")
+    return value.strip()
+
+
 def decode_token(token: str) -> dict:
     try:
         return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -81,13 +110,13 @@ async def get_admin_user(user=Depends(get_current_user)) -> dict:
 # ─── Schemas ──────────────────────────────────────────────────────────────────
 
 class RegisterRequest(BaseModel):
-    email: EmailStr
-    password: str
+    email: Any = ""
+    password: Any = ""
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
+    email: Any = ""
+    password: Any = ""
 
 
 # ─── Endpoints ────────────────────────────────────────────────────────────────
@@ -95,17 +124,19 @@ class LoginRequest(BaseModel):
 @auth_router.post("/register")
 async def register(req: RegisterRequest, request: Request):
     pool = request.app.state.pool
+    email = normalize_email_or_400(req.email)
+    password = require_password_or_400(req.password)
 
     existing = await pool.fetchrow(
-        "SELECT id FROM users WHERE email = $1", req.email
+        "SELECT id FROM users WHERE email = $1", email
     )
     if existing:
-        raise HTTPException(status_code=409, detail="Email already registered")
+        raise HTTPException(status_code=409, detail="Email уже зарегистрирован")
 
-    if len(req.password) < 8:
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="Пароль должен быть не короче 8 символов")
 
-    hashed = hash_password(req.password)
+    hashed = hash_password(password)
 
     user_id = await pool.fetchval(
         """
@@ -113,26 +144,28 @@ async def register(req: RegisterRequest, request: Request):
         VALUES ($1, $2)
         RETURNING id
         """,
-        req.email,
+        email,
         hashed,
     )
 
-    token = create_token(user_id, req.email)
-    return {"token": token, "user_id": user_id, "email": req.email}
+    token = create_token(user_id, email)
+    return {"token": token, "user_id": user_id, "email": email}
 
 
 @auth_router.post("/login")
 async def login(req: LoginRequest, request: Request):
     pool = request.app.state.pool
+    email = normalize_email_or_400(req.email)
+    password = require_password_or_400(req.password)
 
     row = await pool.fetchrow(
-        "SELECT id, password_hash FROM users WHERE email = $1", req.email
+        "SELECT id, password_hash FROM users WHERE email = $1", email
     )
-    if not row or not verify_password(req.password, row["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+    if not row or not verify_password(password, row["password_hash"]):
+        raise HTTPException(status_code=401, detail="Неверный email или пароль")
 
-    token = create_token(row["id"], req.email)
-    return {"token": token, "user_id": row["id"], "email": req.email}
+    token = create_token(row["id"], email)
+    return {"token": token, "user_id": row["id"], "email": email}
 
 
 @auth_router.get("/me")
@@ -146,12 +179,12 @@ APP_BASE_URL = os.environ.get("APP_BASE_URL", "").rstrip("/")
 
 
 class ForgotRequest(BaseModel):
-    email: EmailStr
+    email: Any = ""
 
 
 class ResetRequest(BaseModel):
-    token: str
-    new_password: str
+    token: Any = ""
+    new_password: Any = ""
 
 
 @auth_router.post("/password/forgot")
@@ -161,8 +194,9 @@ async def password_forgot(req: ForgotRequest, request: Request):
     from brevo import BrevoConfigError, send_password_reset_email
 
     pool = request.app.state.pool
+    email = normalize_email_or_400(req.email)
 
-    row = await pool.fetchrow("SELECT id FROM users WHERE email = $1", req.email)
+    row = await pool.fetchrow("SELECT id FROM users WHERE email = $1", email)
     if not row:
         # Silently succeed — don't reveal whether email exists
         return {"ok": True}
@@ -189,7 +223,7 @@ async def password_forgot(req: ForgotRequest, request: Request):
     reset_url = f"{base}/?reset_token={token}"
 
     try:
-        await send_password_reset_email(req.email, reset_url)
+        await send_password_reset_email(email, reset_url)
     except BrevoConfigError as exc:
         raise HTTPException(status_code=500, detail=f"Mail service not configured: {exc}") from exc
     except Exception as exc:
@@ -201,9 +235,11 @@ async def password_forgot(req: ForgotRequest, request: Request):
 @auth_router.post("/password/reset")
 async def password_reset(req: ResetRequest, request: Request):
     pool = request.app.state.pool
+    reset_token = require_token_or_400(req.token)
+    new_password = require_password_or_400(req.new_password)
 
-    if len(req.new_password) < 8:
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    if len(new_password) < 8:
+        raise HTTPException(status_code=400, detail="Пароль должен быть не короче 8 символов")
 
     row = await pool.fetchrow(
         """
@@ -214,12 +250,12 @@ async def password_reset(req: ResetRequest, request: Request):
           AND expires_at > now()
         RETURNING user_id
         """,
-        req.token,
+        reset_token,
     )
     if not row:
-        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+        raise HTTPException(status_code=400, detail="Ссылка сброса пароля недействительна или устарела")
 
-    hashed = hash_password(req.new_password)
+    hashed = hash_password(new_password)
     user_row = await pool.fetchrow(
         "UPDATE users SET password_hash = $1 WHERE id = $2 RETURNING email",
         hashed,
