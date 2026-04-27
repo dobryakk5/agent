@@ -21,14 +21,20 @@ from cabinet import cabinet_router
 from docker_manager import (
     create_instance,
     delete_user_secret_file,
-    recreate_container,
     remove_instance,
     stop_instance,
     write_user_secret_json,
 )
+from instance_service import (
+    PLATFORMS,
+    apply_admin_settings_to_all_instances,
+    resolve_api_key,
+    sync_instance_to_admin_settings,
+)
 from google_oauth import GoogleOAuthConfigError, build_auth_url, exchange_code_for_tokens, get_google_userinfo
 from yandex_oauth import YandexOAuthConfigError, build_yandex_auth_url, exchange_yandex_code
 from metrics import auto_stop_loop, collect_metrics_loop
+from settings_store import ensure_settings_defaults, get_settings, write_settings
 from telegram_gateway import (
     TelegramGatewayConfigError,
     consume_telegram_link_token,
@@ -44,32 +50,6 @@ from telegram_gateway import (
 )
 
 DB_URL = os.environ["DATABASE_URL"]
-PLATFORMS = {"anthropic", "openrouter", "openai"}
-PLATFORM_ENV_KEYS = {
-    "anthropic": "ANTHROPIC_API_KEY",
-    "openrouter": "OPENROUTER_API_KEY",
-    "openai": "OPENAI_API_KEY",
-}
-
-
-def resolve_api_key(platform: str, request_api_key: str | None, stored_api_key: str | None = None) -> str:
-    req_key = (request_api_key or "").strip()
-    db_key = (stored_api_key or "").strip()
-    if req_key:
-        return req_key
-    if db_key:
-        return db_key
-    env_name = PLATFORM_ENV_KEYS.get(platform)
-    env_key = (os.getenv(env_name, "") or "").strip() if env_name else ""
-    if env_key:
-        return env_key
-    raise HTTPException(
-        status_code=400,
-        detail=(
-            f"API key is required for platform '{platform}'. "
-            f"Pass it in request or set {env_name} in .env"
-        ),
-    )
 
 
 def generate_gateway_token() -> str:
@@ -124,6 +104,7 @@ async def consume_google_state(pool, state_id: str) -> dict:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.pool = await asyncpg.create_pool(DB_URL)
+    await ensure_settings_defaults(app.state.pool)
     app.state.metrics_task = asyncio.create_task(collect_metrics_loop(DB_URL))
     app.state.auto_stop_task = asyncio.create_task(auto_stop_loop(DB_URL))
     try:
@@ -157,27 +138,31 @@ async def admin_dashboard():
 
 class ProvisionRequest(BaseModel):
     user_id: int
-    platform: str
     api_key: str = ""
-    llm_model: str
     telegram_bot_token: str = ""
 
 
-class UpdateModelRequest(BaseModel):
+class SettingsRequest(BaseModel):
+    platform: str
     llm_model: str
 
 
 @app.post("/provision")
 async def provision(req: ProvisionRequest, request: Request, admin=Depends(get_admin_user)):
-    if req.platform not in PLATFORMS:
+    pool = request.app.state.pool
+    settings = await get_settings(pool)
+    platform = (settings.get("platform") or "").strip()
+    llm_model = (settings.get("llm_model") or "").strip()
+    if not platform or not llm_model:
+        raise HTTPException(status_code=400, detail="Admin settings are incomplete. Set platform and model in /admin")
+    if platform not in PLATFORMS:
         raise HTTPException(status_code=400, detail=f"Unknown platform. Use one of: {sorted(PLATFORMS)}")
 
-    pool = request.app.state.pool
     existing = await pool.fetchrow("SELECT user_id, status FROM user_instances WHERE user_id = $1", req.user_id)
     if existing:
         raise HTTPException(status_code=409, detail="Instance already exists")
 
-    resolved_api_key = resolve_api_key(req.platform, req.api_key)
+    resolved_api_key = resolve_api_key(platform, req.api_key)
     gateway_token = generate_gateway_token()
 
     loop = asyncio.get_event_loop()
@@ -185,9 +170,9 @@ async def provision(req: ProvisionRequest, request: Request, admin=Depends(get_a
         None,
         lambda: create_instance(
             user_id=req.user_id,
-            platform=req.platform,
+            platform=platform,
             api_key=resolved_api_key,
-            llm_model=req.llm_model,
+            llm_model=llm_model,
             gateway_token=gateway_token,
         ),
     )
@@ -206,46 +191,39 @@ async def provision(req: ProvisionRequest, request: Request, admin=Depends(get_a
         result["secrets_volume_name"],
         gateway_token,
         resolved_api_key,
-        req.platform,
-        req.llm_model,
+        platform,
+        llm_model,
     )
     return result
+
+
+@app.get("/settings")
+async def read_settings(request: Request, admin=Depends(get_admin_user)):
+    pool = request.app.state.pool
+    return await get_settings(pool)
+
+
+@app.post("/settings")
+async def save_settings(req: SettingsRequest, request: Request, admin=Depends(get_admin_user)):
+    if req.platform not in PLATFORMS:
+        raise HTTPException(status_code=400, detail=f"Unknown platform. Use one of: {sorted(PLATFORMS)}")
+    llm_model = req.llm_model.strip()
+    if not llm_model:
+        raise HTTPException(status_code=400, detail="LLM model is required")
+    pool = request.app.state.pool
+    return await write_settings(pool, req.platform, llm_model)
+
+
+@app.post("/settings/apply")
+async def apply_settings(request: Request, admin=Depends(get_admin_user)):
+    pool = request.app.state.pool
+    return await apply_admin_settings_to_all_instances(pool)
 
 
 @app.post("/update/{user_id}")
-async def update_model(user_id: int, req: UpdateModelRequest, request: Request, admin=Depends(get_admin_user)):
+async def update_model(user_id: int, request: Request, admin=Depends(get_admin_user)):
     pool = request.app.state.pool
-    row = await pool.fetchrow(
-        "SELECT platform, api_key, gateway_token FROM user_instances WHERE user_id = $1",
-        user_id,
-    )
-    if not row:
-        raise HTTPException(status_code=404, detail="Instance not found")
-
-    loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(
-        None,
-        lambda: recreate_container(
-            user_id=user_id,
-            platform=row["platform"],
-            api_key=resolve_api_key(row["platform"], None, row["api_key"]),
-            llm_model=req.llm_model,
-            gateway_token=row["gateway_token"],
-        ),
-    )
-
-    await pool.execute(
-        """
-        UPDATE user_instances
-        SET llm_model = $1,
-            status = 'running',
-            stopped_at = NULL
-        WHERE user_id = $2
-        """,
-        req.llm_model,
-        user_id,
-    )
-    return result
+    return await sync_instance_to_admin_settings(pool, user_id, force_status="running")
 
 
 @app.post("/stop/{user_id}")

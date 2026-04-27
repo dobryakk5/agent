@@ -10,7 +10,8 @@ from urllib.parse import quote
 import httpx
 from fastapi import HTTPException
 
-from docker_manager import get_container_ip, start_instance
+from docker_manager import get_container_ip
+from instance_service import sync_instance_to_admin_settings
 
 TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN", "") or "").strip()
 TELEGRAM_BOT_USERNAME = (os.getenv("TELEGRAM_BOT_USERNAME", "") or "").strip().lstrip("@")
@@ -227,14 +228,8 @@ async def route_telegram_message_to_instance(pool, user_id: int, text: str, sess
     if not gateway_token:
         raise RuntimeError("Instance gateway token is missing")
 
-    loop = asyncio.get_running_loop()
-
     if row["status"] != "running":
-        await loop.run_in_executor(None, lambda: start_instance(user_id))
-        await pool.execute(
-            "UPDATE user_instances SET status='running', stopped_at=NULL WHERE user_id=$1",
-            user_id,
-        )
+        await sync_instance_to_admin_settings(pool, user_id, force_status="running")
 
     ip = await wait_for_instance_http(user_id, gateway_token)
 

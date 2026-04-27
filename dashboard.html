@@ -155,10 +155,16 @@
   }
   .btn-primary { background: var(--accent); color: #fff; }
   .btn-primary:hover { background: #6a4de0; transform: translateY(-1px); }
+  .btn-secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { border-color: var(--accent); color: #fff; }
   .btn-stop { background: transparent; color: var(--danger); border: 1px solid var(--danger); padding: 6px 12px; font-size: 11px; }
   .btn-stop:hover { background: rgba(255,77,109,0.1); }
   .btn-remove { background: transparent; color: var(--muted); border: 1px solid var(--border); padding: 6px 12px; font-size: 11px; }
   .btn-remove:hover { color: var(--danger); border-color: var(--danger); }
+  .field input[readonly] {
+    cursor: default;
+    opacity: 0.8;
+  }
 
   .table-card {
     background: var(--card);
@@ -271,6 +277,39 @@
     </div>
   </div>
 
+  <!-- Global settings -->
+  <div class="section-title">Глобальные настройки</div>
+  <div class="provision-card">
+    <div class="form-grid">
+
+      <div class="field">
+        <label>Платформа</label>
+        <select id="s-platform" onchange="onSettingsPlatformChange()">
+          <option value="anthropic">Anthropic</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="openai">OpenAI</option>
+        </select>
+      </div>
+
+      <div class="field" style="grid-column: span 3;">
+        <label>Базовая модель</label>
+        <input id="s-model" placeholder="nvidia/nemotron-3-super-120b-a12b:free" />
+        <div class="model-hints" id="model-hints"></div>
+      </div>
+
+      <div class="field">
+        <label>Текущий API key</label>
+        <input id="s-key-hint" type="text" placeholder="Ключ берётся из формы инстанса или .env" readonly />
+      </div>
+
+    </div>
+
+    <div style="margin-top:16px; display:flex; gap:12px; justify-content:flex-end; flex-wrap:wrap;">
+      <button class="btn btn-secondary" onclick="saveSettings()">Сохранить настройки</button>
+      <button class="btn btn-primary" onclick="applySettings()">Сохранить и применить ко всем</button>
+    </div>
+  </div>
+
   <!-- Provision form -->
   <div class="section-title">Новый инстанс</div>
   <div class="provision-card">
@@ -283,22 +322,17 @@
 
       <div class="field">
         <label>Платформа</label>
-        <select id="f-platform" onchange="onPlatformChange()">
-          <option value="anthropic">Anthropic</option>
-          <option value="openrouter">OpenRouter</option>
-          <option value="openai">OpenAI</option>
-        </select>
+        <input id="f-platform" readonly />
       </div>
 
       <div class="field">
         <label>API Key</label>
-        <input id="f-key" type="password" placeholder="sk-ant-..." />
+        <input id="f-key" type="password" placeholder="sk-or-... (или из .env)" />
       </div>
 
       <div class="field" style="grid-column: span 2;">
-        <label>LLM Модель</label>
-        <input id="f-model" placeholder="anthropic/claude-sonnet-4-6" />
-        <div class="model-hints" id="model-hints"></div>
+        <label>Базовая модель</label>
+        <input id="f-model" readonly />
       </div>
 
       <div class="field">
@@ -393,32 +427,84 @@ const KEY_PLACEHOLDER = {
   openai: 'sk-... (или из .env)',
 };
 
-function onPlatformChange() {
-  const p = document.getElementById('f-platform').value;
-  const modelInput = document.getElementById('f-model');
+let charts = {};
+let currentSettings = null;
+const token = localStorage.getItem('token') || '';
+
+function setProvisionDefaults(settings) {
+  document.getElementById('f-platform').value = settings.platform || '';
+  document.getElementById('f-model').value = settings.llm_model || '';
+  document.getElementById('f-key').placeholder = KEY_PLACEHOLDER[settings.platform] || 'key...';
+}
+
+function onSettingsPlatformChange() {
+  const p = document.getElementById('s-platform').value;
   const keyInput = document.getElementById('f-key');
   const hints = document.getElementById('model-hints');
 
-  modelInput.value = MODEL_HINTS[p][0] || '';
   keyInput.placeholder = KEY_PLACEHOLDER[p] || 'key...';
+  document.getElementById('s-key-hint').value = KEY_PLACEHOLDER[p] || 'Ключ задаётся в .env';
 
   // Подсветка select
-  const sel = document.getElementById('f-platform');
+  const sel = document.getElementById('s-platform');
   sel.className = `platform-${p}`;
 
   // Chips
   hints.innerHTML = MODEL_HINTS[p].map(m =>
-    `<span class="hint-chip" onclick="document.getElementById('f-model').value='${m}'">${m}</span>`
+    `<span class="hint-chip" onclick="document.getElementById('s-model').value='${m}'">${m}</span>`
   ).join('');
 }
 
-// Инит
-onPlatformChange();
+async function loadSettings() {
+  currentSettings = await api('/settings');
+  document.getElementById('s-platform').value = currentSettings.platform || 'openrouter';
+  document.getElementById('s-model').value = currentSettings.llm_model || '';
+  onSettingsPlatformChange();
+  setProvisionDefaults(currentSettings);
+}
+
+async function saveSettings() {
+  const platform = document.getElementById('s-platform').value;
+  const llm_model = document.getElementById('s-model').value.trim();
+
+  if (!llm_model) {
+    toast('Укажи базовую модель', 'error');
+    return false;
+  }
+
+  try {
+    currentSettings = await api('/settings', {
+      method: 'POST',
+      body: JSON.stringify({ platform, llm_model })
+    });
+    onSettingsPlatformChange();
+    setProvisionDefaults(currentSettings);
+    toast(`Сохранено: ${platform} / ${llm_model}`);
+    return true;
+  } catch (e) {
+    toast(e.message, 'error');
+    return false;
+  }
+}
+
+async function applySettings() {
+  const saved = await saveSettings();
+  if (!saved || !currentSettings) return;
+
+  try {
+    const result = await api('/settings/apply', { method: 'POST' });
+    await loadInstances();
+    if (result.failed_count) {
+      toast(`Применено: ${result.applied_count}, ошибок: ${result.failed_count}`, 'error');
+      return;
+    }
+    toast(`Настройки применены ко всем: ${result.applied_count}`, 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
 
 // ── API ──────────────────────────────────────────────────────────────────────
-
-let charts = {};
-const token = localStorage.getItem('token') || '';
 
 function toast(msg, type = 'success') {
   const t = document.getElementById('toast');
@@ -488,16 +574,16 @@ async function loadInstances() {
 
 async function provision() {
   const uid = +document.getElementById('f-uid').value;
-  const platform = document.getElementById('f-platform').value;
   const key = document.getElementById('f-key').value.trim();
-  const model = document.getElementById('f-model').value.trim();
+  const platform = currentSettings?.platform || document.getElementById('f-platform').value;
+  const model = currentSettings?.llm_model || document.getElementById('f-model').value;
 
   if (!uid || !model) return toast('Укажи User ID и модель', 'error');
 
   try {
     await api('/provision', {
       method: 'POST',
-      body: JSON.stringify({ user_id: uid, platform, api_key: key, llm_model: model })
+      body: JSON.stringify({ user_id: uid, api_key: key })
     });
     toast(`Инстанс ${uid} запущен (${platform} / ${model})`);
     loadInstances();
@@ -582,7 +668,9 @@ async function loadMetrics() {
   } catch(e) { toast(e.message, 'error'); }
 }
 
-loadInstances();
+loadSettings().then(loadInstances).catch(() => {
+  document.getElementById('api-status').textContent = 'offline';
+});
 setInterval(loadInstances, 15000);
 </script>
 </body>
