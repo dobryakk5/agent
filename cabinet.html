@@ -389,73 +389,6 @@
 
   .btn-sm.danger:hover { border-color: var(--red); }
 
-  /* ── Model selector ── */
-  .model-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-  }
-
-  @media (max-width: 520px) {
-    .model-grid { grid-template-columns: 1fr; }
-  }
-
-  .model-card {
-    border: 1px solid var(--border);
-    border-radius: 7px;
-    padding: 12px 14px;
-    cursor: pointer;
-    transition: all 0.15s;
-    background: none;
-    text-align: left;
-    width: 100%;
-  }
-
-  .model-card:hover { border-color: var(--border-bright); }
-
-  .model-card.selected {
-    border-color: var(--accent);
-    background: var(--accent-dim);
-  }
-
-  .model-name {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--text);
-    margin-bottom: 3px;
-  }
-
-  .model-desc {
-    font-size: 11px;
-    color: var(--muted);
-  }
-
-  .model-check {
-    float: right;
-    color: var(--accent);
-    font-size: 14px;
-    display: none;
-  }
-
-  .model-card.selected .model-check { display: inline; }
-
-  .save-model-btn {
-    margin-top: 14px;
-    background: var(--accent);
-    color: #fff;
-    border: none;
-    border-radius: 6px;
-    padding: 9px 18px;
-    font-size: 13px;
-    font-family: 'IBM Plex Sans', sans-serif;
-    cursor: pointer;
-    transition: opacity 0.15s;
-    display: none;
-  }
-
-  .save-model-btn:hover { opacity: 0.85; }
-  .save-model-btn.visible { display: inline-block; }
-
   /* ── Features grid ── */
   .features-grid {
     display: grid;
@@ -688,18 +621,6 @@
       <div style="font-size:12px; color:var(--muted)" id="agent-hint"></div>
     </div>
 
-    <!-- Model selector -->
-    <div class="card">
-      <div class="card-header">
-        <span class="card-title">Языковая модель</span>
-      </div>
-      <div class="section-label">Выберите модель для вашего агента</div>
-      <div class="model-grid" id="model-grid"></div>
-      <button class="save-model-btn" id="save-model-btn" onclick="saveModel()">
-        Применить модель
-      </button>
-    </div>
-
     <!-- Features -->
     <div class="card">
       <div class="card-header">
@@ -719,8 +640,6 @@
 let token = localStorage.getItem('token');
 let userId = null;
 let statusData = null;
-let selectedModel = null;
-let currentModel = null;
 
 // ── Init ───────────────────────────────────────────────────────────────────
 (async function init() {
@@ -904,7 +823,6 @@ async function loadStatus() {
   try {
     statusData = await api('GET', '/cabinet/status');
     renderStatus();
-    renderModels();
     renderFeatures();
   } catch (e) {
     console.error('loadStatus error', e);
@@ -998,56 +916,6 @@ async function updateAgentImage() {
   } finally {
     btn.disabled = false;
     btn.textContent = oldText || 'Обновить';
-  }
-}
-
-// ── Models ─────────────────────────────────────────────────────────────────
-function renderModels() {
-  currentModel = statusData.instance?.llm_model || statusData.default_model;
-  selectedModel = currentModel;
-  const models = Array.isArray(statusData?.models) ? statusData.models : [];
-
-  const grid = document.getElementById('model-grid');
-  if (!models.length) {
-    grid.innerHTML = '<div class="feature-soon">Модели пока недоступны</div>';
-    return;
-  }
-
-  grid.innerHTML = models.map(m => `
-    <button class="model-card ${m.id === currentModel ? 'selected' : ''}"
-            onclick="selectModel('${m.id}')" data-id="${m.id}">
-      <span class="model-check">✓</span>
-      <div class="model-name">${m.name}</div>
-      <div class="model-desc">${m.description}</div>
-    </button>
-  `).join('');
-}
-
-function selectModel(id) {
-  selectedModel = id;
-  document.querySelectorAll('.model-card').forEach(el => {
-    el.classList.toggle('selected', el.dataset.id === id);
-  });
-  const saveBtn = document.getElementById('save-model-btn');
-  saveBtn.classList.toggle('visible', id !== currentModel);
-}
-
-async function saveModel() {
-  if (!selectedModel || selectedModel === currentModel) return;
-  const btn = document.getElementById('save-model-btn');
-  btn.textContent = 'Применяется...';
-  btn.disabled = true;
-  try {
-    await api('POST', '/cabinet/model', { llm_model: selectedModel });
-    currentModel = selectedModel;
-    btn.classList.remove('visible');
-    toast('Модель изменена, агент перезапускается', 'success');
-    setTimeout(loadStatus, 3000);
-  } catch (e) {
-    toast(e.message, 'error');
-  } finally {
-    btn.textContent = 'Применить модель';
-    btn.disabled = false;
   }
 }
 

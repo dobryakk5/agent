@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import shlex
 import tarfile
 
 import docker
@@ -10,6 +11,7 @@ client = docker.from_env()
 GOOGLE_OAUTH_JSON_PATH = os.environ.get("GOOGLE_OAUTH_JSON_PATH", "")
 GOOGLE_OAUTH_JSON_IN_CONTAINER = "/run/secrets/app/google-oauth.json"
 GOOGLE_TOKENS_JSON_IN_CONTAINER = "/run/secrets/user/google-tokens.json"
+SECRETS_HELPER_IMAGE = os.environ.get("SECRETS_HELPER_IMAGE", "openclaw-agent:latest")
 
 
 def ensure_volume(name: str):
@@ -42,16 +44,15 @@ def _get_container_name(user_id: int) -> str:
     return f"agent_user_{user_id}"
 
 
-def write_user_secret_file(user_id: int, filename: str, content: str) -> str:
-    """Write a file into the user secrets volume without requiring root on the host.
+def _iter_secret_helper_images():
+    seen = set()
+    for image in (SECRETS_HELPER_IMAGE, "alpine:3.19"):
+        if image and image not in seen:
+            seen.add(image)
+            yield image
 
-    Uses Docker's put_archive API: creates a temporary stopped container that
-    has the secrets volume mounted, streams a tar archive into it, then removes
-    the container. The volume data persists after the container is removed.
-    """
-    volume_name = get_secrets_volume_name(user_id)
-    ensure_volume(volume_name)
 
+def _build_secret_archive(filename: str, content: str) -> bytes:
     content_bytes = content.encode("utf-8")
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w") as tar:
@@ -60,17 +61,46 @@ def write_user_secret_file(user_id: int, filename: str, content: str) -> str:
         info.mode = 0o600
         tar.addfile(info, io.BytesIO(content_bytes))
     buf.seek(0)
+    return buf.read()
 
-    container = client.containers.create(
-        "alpine:3.19",
-        mounts=[docker.types.Mount(target="/secrets", source=volume_name, type="volume")],
-    )
+
+def write_user_secret_file(user_id: int, filename: str, content: str) -> str:
+    """Write a file into the user secrets volume without requiring root on the host.
+
+    Prefer writing directly through the user's existing container because it
+    already has the secrets volume mounted. Fall back to a temporary helper
+    container only if the user container is missing.
+    """
+    volume_name = get_secrets_volume_name(user_id)
+    ensure_volume(volume_name)
+    archive_bytes = _build_secret_archive(filename, content)
+
     try:
-        container.put_archive("/secrets", buf.read())
-    finally:
-        container.remove(force=True)
+        container = client.containers.get(_get_container_name(user_id))
+        container.put_archive("/run/secrets/user", archive_bytes)
+        return filename
+    except docker.errors.NotFound:
+        pass
 
-    return filename
+    last_error = None
+    for image in _iter_secret_helper_images():
+        try:
+            container = client.containers.create(
+                image,
+                mounts=[docker.types.Mount(target="/secrets", source=volume_name, type="volume")],
+            )
+        except docker.errors.ImageNotFound as exc:
+            last_error = exc
+            continue
+        try:
+            container.put_archive("/secrets", archive_bytes)
+            return filename
+        finally:
+            container.remove(force=True)
+
+    if last_error:
+        raise last_error
+    raise RuntimeError("Could not create helper container for writing user secret")
 
 
 def write_user_secret_json(user_id: int, filename: str, payload: dict) -> str:
@@ -84,13 +114,29 @@ def write_user_secret_json(user_id: int, filename: str, payload: dict) -> str:
 def delete_user_secret_file(user_id: int, filename: str) -> None:
     """Remove a file from the user secrets volume without requiring root on the host."""
     volume_name = get_secrets_volume_name(user_id)
+
     try:
-        client.containers.run(
-            "alpine:3.19",
-            command=["rm", "-f", f"/secrets/{filename}"],
-            mounts=[docker.types.Mount(target="/secrets", source=volume_name, type="volume")],
-            remove=True,
-        )
+        container = client.containers.get(_get_container_name(user_id))
+        if container.status == "running":
+            container.exec_run(["rm", "-f", f"/run/secrets/user/{filename}"])
+            return
+    except docker.errors.NotFound:
+        pass
+
+    quoted_path = shlex.quote(f"/secrets/{filename}")
+    try:
+        for image in _iter_secret_helper_images():
+            try:
+                client.containers.run(
+                    image,
+                    command=f"rm -f {quoted_path}",
+                    entrypoint=["/bin/sh", "-lc"],
+                    mounts=[docker.types.Mount(target="/secrets", source=volume_name, type="volume")],
+                    remove=True,
+                )
+                return
+            except docker.errors.ImageNotFound:
+                continue
     except Exception:
         pass
 
