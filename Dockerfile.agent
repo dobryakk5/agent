@@ -28,7 +28,11 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g openclaw@2026.4.26
-RUN openclaw plugins install @tensorfold/openclaw-google-workspace
+
+RUN mkdir -p /root/.openclaw/extensions
+
+COPY vendor/openclaw-extensions/openclaw-google-workspace/ \
+     /root/.openclaw/extensions/openclaw-google-workspace/
 
 # ── yax: Yandex 360 skill ────────────────────────────────────────────────────
 COPY yax-skill/ /opt/yax/
