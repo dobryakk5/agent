@@ -919,6 +919,7 @@ function renderStatus() {
   const toggleBtn = document.getElementById('agent-toggle-btn');
   const updateBtn = document.getElementById('agent-update-btn');
   const hint = document.getElementById('agent-hint');
+  const models = Array.isArray(statusData?.models) ? statusData.models : [];
 
   if (!inst) {
     dot.className = 'dot dot-red';
@@ -954,7 +955,7 @@ function renderStatus() {
     updateBtn.style.display = 'none';
   }
 
-  const modelName = statusData.models.find(m => m.id === inst.llm_model)?.name || inst.llm_model || '—';
+  const modelName = models.find(m => m.id === inst.llm_model)?.name || inst.llm_model || '—';
   info.innerHTML = `<strong>${inst.container_name}</strong> · ${modelName}`;
   toggleBtn.style.display = 'inline-block';
   updateBtn.style.display = 'inline-block';
@@ -1004,9 +1005,15 @@ async function updateAgentImage() {
 function renderModels() {
   currentModel = statusData.instance?.llm_model || statusData.default_model;
   selectedModel = currentModel;
+  const models = Array.isArray(statusData?.models) ? statusData.models : [];
 
   const grid = document.getElementById('model-grid');
-  grid.innerHTML = statusData.models.map(m => `
+  if (!models.length) {
+    grid.innerHTML = '<div class="feature-soon">Модели пока недоступны</div>';
+    return;
+  }
+
+  grid.innerHTML = models.map(m => `
     <button class="model-card ${m.id === currentModel ? 'selected' : ''}"
             onclick="selectModel('${m.id}')" data-id="${m.id}">
       <span class="model-check">✓</span>
@@ -1065,6 +1072,10 @@ function renderFeatures() {
       } else {
         action = `<button class="btn-connect" onclick="connectGoogle()">Подключить</button>`;
       }
+    } else if (key === 'docker_restart') {
+      action = f.enabled
+        ? `<button class="btn-connect" onclick="restartDocker()">Перезапустить</button>`
+        : `<span class="badge badge-muted">недоступно</span>`;
     } else if (f.enabled) {
       action = `<span class="badge badge-green">активно</span>`;
     }
@@ -1079,6 +1090,22 @@ function renderFeatures() {
       </div>
     `;
   }).join('');
+}
+
+async function restartDocker() {
+  const inst = statusData?.instance;
+  if (!inst) return;
+
+  const ok = confirm('Перезапустить личный Docker-контейнер агента? Активный диалог будет прерван.');
+  if (!ok) return;
+
+  try {
+    await api('POST', '/cabinet/agent/restart');
+    await loadStatus();
+    toast('Docker-контейнер перезапущен', 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
 }
 
 async function connectTelegram() {
