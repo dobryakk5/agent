@@ -682,6 +682,7 @@
         <div class="dot" id="status-dot"></div>
         <div class="agent-info" id="agent-info">Загрузка...</div>
         <button class="btn-sm" id="agent-toggle-btn" onclick="toggleAgent()" style="display:none"></button>
+        <button class="btn-sm" id="agent-update-btn" onclick="updateAgentImage()" style="display:none">Обновить</button>
       </div>
 
       <div style="font-size:12px; color:var(--muted)" id="agent-hint"></div>
@@ -916,6 +917,7 @@ function renderStatus() {
   const info = document.getElementById('agent-info');
   const badge = document.getElementById('agent-badge');
   const toggleBtn = document.getElementById('agent-toggle-btn');
+  const updateBtn = document.getElementById('agent-update-btn');
   const hint = document.getElementById('agent-hint');
 
   if (!inst) {
@@ -925,6 +927,7 @@ function renderStatus() {
     badge.className = 'badge badge-muted';
     hint.textContent = 'Обратитесь к администратору для подключения';
     toggleBtn.style.display = 'none';
+    updateBtn.style.display = 'none';
     return;
   }
 
@@ -948,11 +951,13 @@ function renderStatus() {
     badge.textContent = status;
     badge.className = 'badge badge-yellow';
     toggleBtn.style.display = 'none';
+    updateBtn.style.display = 'none';
   }
 
   const modelName = statusData.models.find(m => m.id === inst.llm_model)?.name || inst.llm_model || '—';
   info.innerHTML = `<strong>${inst.container_name}</strong> · ${modelName}`;
   toggleBtn.style.display = 'inline-block';
+  updateBtn.style.display = 'inline-block';
 }
 
 async function toggleAgent() {
@@ -965,6 +970,33 @@ async function toggleAgent() {
     toast(action === 'stop' ? 'Агент остановлен' : 'Агент запускается...', 'success');
   } catch (e) {
     toast(e.message, 'error');
+  }
+}
+
+async function updateAgentImage() {
+  const inst = statusData?.instance;
+  if (!inst) return;
+
+  const ok = confirm('Обновить личный контейнер агента до новой версии? Данные и токены сохранятся.');
+  if (!ok) return;
+
+  const btn = document.getElementById('agent-update-btn');
+  const oldText = btn.textContent;
+
+  try {
+    btn.disabled = true;
+    btn.textContent = 'Обновляется…';
+    toast('Обновляю агента...', 'success');
+
+    await api('POST', '/cabinet/agent/update-image');
+    await loadStatus();
+
+    toast('Агент обновлён', 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = oldText || 'Обновить';
   }
 }
 

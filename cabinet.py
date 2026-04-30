@@ -101,6 +101,42 @@ async def agent_start(request: Request, user=Depends(get_current_user)):
     return {"ok": True, **result}
 
 
+@cabinet_router.post("/agent/update-image")
+async def agent_update_image(request: Request, user=Depends(get_current_user)):
+    """Recreate only the current user's agent container from openclaw-agent:latest.
+
+    Docker volumes and network are preserved by recreate_container() inside
+    sync_instance_to_admin_settings(), so user data and secrets remain intact.
+    """
+    pool = request.app.state.pool
+
+    row = await pool.fetchrow(
+        """
+        SELECT status
+        FROM user_instances
+        WHERE user_id = $1
+        """,
+        user["user_id"],
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Instance not found")
+
+    current_status = row["status"] or "running"
+    target_status = current_status if current_status in ("running", "stopped") else "running"
+
+    result = await sync_instance_to_admin_settings(
+        pool,
+        user["user_id"],
+        force_status=target_status,
+    )
+
+    return {
+        "ok": True,
+        "message": "Agent container was recreated from openclaw-agent:latest",
+        **result,
+    }
+
+
 @cabinet_router.post("/telegram/link/start")
 async def telegram_link_start(request: Request, user=Depends(get_current_user)):
     pool = request.app.state.pool
