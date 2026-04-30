@@ -27,7 +27,7 @@ RUN apt-get update && apt-get install -y \
     xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g openclaw@2026.4.14
+RUN npm install -g openclaw@2026.4.26
 RUN openclaw plugins install @tensorfold/openclaw-google-workspace
 
 # ── yax: Yandex 360 skill ────────────────────────────────────────────────────

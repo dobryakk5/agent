@@ -101,13 +101,6 @@ if os.path.isfile(google_oauth_path):
         "config": {
             "credentialsPath": google_oauth_path,
             "tokenPath": google_tokens_path,
-            "services": {
-                "gmail":    {"enabled": True, "readOnly": True},
-                "calendar": {"enabled": True, "readOnly": False},
-                "drive":    {"enabled": True, "readOnly": True},
-                "docs":     {"enabled": True, "readOnly": True},
-                "sheets":   {"enabled": True, "readOnly": True},
-            },
         },
     }
 

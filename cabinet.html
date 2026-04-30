@@ -687,6 +687,18 @@
       <div style="font-size:12px; color:var(--muted)" id="agent-hint"></div>
     </div>
 
+    <!-- Model selector -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Языковая модель</span>
+      </div>
+      <div class="section-label">Выберите модель для вашего агента</div>
+      <div class="model-grid" id="model-grid"></div>
+      <button class="save-model-btn" id="save-model-btn" onclick="saveModel()">
+        Применить модель
+      </button>
+    </div>
+
     <!-- Features -->
     <div class="card">
       <div class="card-header">
@@ -706,6 +718,8 @@
 let token = localStorage.getItem('token');
 let userId = null;
 let statusData = null;
+let selectedModel = null;
+let currentModel = null;
 
 // ── Init ───────────────────────────────────────────────────────────────────
 (async function init() {
@@ -889,6 +903,7 @@ async function loadStatus() {
   try {
     statusData = await api('GET', '/cabinet/status');
     renderStatus();
+    renderModels();
     renderFeatures();
   } catch (e) {
     console.error('loadStatus error', e);
@@ -935,7 +950,8 @@ function renderStatus() {
     toggleBtn.style.display = 'none';
   }
 
-  info.innerHTML = `<strong>${inst.container_name}</strong>`;
+  const modelName = statusData.models.find(m => m.id === inst.llm_model)?.name || inst.llm_model || '—';
+  info.innerHTML = `<strong>${inst.container_name}</strong> · ${modelName}`;
   toggleBtn.style.display = 'inline-block';
 }
 
@@ -949,6 +965,50 @@ async function toggleAgent() {
     toast(action === 'stop' ? 'Агент остановлен' : 'Агент запускается...', 'success');
   } catch (e) {
     toast(e.message, 'error');
+  }
+}
+
+// ── Models ─────────────────────────────────────────────────────────────────
+function renderModels() {
+  currentModel = statusData.instance?.llm_model || statusData.default_model;
+  selectedModel = currentModel;
+
+  const grid = document.getElementById('model-grid');
+  grid.innerHTML = statusData.models.map(m => `
+    <button class="model-card ${m.id === currentModel ? 'selected' : ''}"
+            onclick="selectModel('${m.id}')" data-id="${m.id}">
+      <span class="model-check">✓</span>
+      <div class="model-name">${m.name}</div>
+      <div class="model-desc">${m.description}</div>
+    </button>
+  `).join('');
+}
+
+function selectModel(id) {
+  selectedModel = id;
+  document.querySelectorAll('.model-card').forEach(el => {
+    el.classList.toggle('selected', el.dataset.id === id);
+  });
+  const saveBtn = document.getElementById('save-model-btn');
+  saveBtn.classList.toggle('visible', id !== currentModel);
+}
+
+async function saveModel() {
+  if (!selectedModel || selectedModel === currentModel) return;
+  const btn = document.getElementById('save-model-btn');
+  btn.textContent = 'Применяется...';
+  btn.disabled = true;
+  try {
+    await api('POST', '/cabinet/model', { llm_model: selectedModel });
+    currentModel = selectedModel;
+    btn.classList.remove('visible');
+    toast('Модель изменена, агент перезапускается', 'success');
+    setTimeout(loadStatus, 3000);
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.textContent = 'Применить модель';
+    btn.disabled = false;
   }
 }
 
@@ -1009,9 +1069,16 @@ async function disconnectTelegram() {
   }
 }
 
-function connectGoogle() {
+async function connectGoogle() {
   if (!userId) return;
-  window.location.href = '/oauth/google/start';
+
+  try {
+    const data = await api('POST', '/oauth/google/start');
+    if (!data.url) throw new Error('Google OAuth URL не получен');
+    window.location.href = data.url;
+  } catch (e) {
+    toast(e.message, 'error');
+  }
 }
 
 async function disconnectGoogle() {
