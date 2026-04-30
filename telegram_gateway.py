@@ -19,6 +19,8 @@ TELEGRAM_WEBHOOK_URL = (os.getenv("TELEGRAM_WEBHOOK_URL", "") or "").strip()
 TELEGRAM_API_BASE = (os.getenv("TELEGRAM_API_BASE", "https://api.telegram.org") or "https://api.telegram.org").rstrip("/")
 OPENCLAW_AGENT_ID = (os.getenv("OPENCLAW_AGENT_ID", "main") or "main").strip()
 
+AGENT_LOADING_TEXT = "Загружаю агента…"
+
 
 class TelegramGatewayConfigError(RuntimeError):
     pass
@@ -58,7 +60,6 @@ async def create_telegram_link_token(pool, user_id: int) -> dict[str, Any]:
     ensure_telegram_link_config()
     token = secrets.token_urlsafe(24)
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=20)
-
     await pool.execute(
         """
         INSERT INTO telegram_link_tokens (token, user_id, expires_at)
@@ -68,7 +69,6 @@ async def create_telegram_link_token(pool, user_id: int) -> dict[str, Any]:
         user_id,
         expires_at,
     )
-
     return {
         "token": token,
         "expires_at": expires_at.isoformat(),
@@ -104,7 +104,6 @@ async def upsert_telegram_link(pool, user_id: int, message: dict[str, Any]) -> N
         telegram_user_id,
         user_id,
     )
-
     await pool.execute(
         """
         INSERT INTO telegram_links (
@@ -149,7 +148,6 @@ async def find_user_by_telegram_id(pool, telegram_user_id: int):
 async def update_telegram_presence(pool, telegram_user_id: int, message: dict[str, Any]) -> None:
     sender = message.get("from") or {}
     chat = message.get("chat") or {}
-
     await pool.execute(
         """
         UPDATE telegram_links
@@ -170,7 +168,6 @@ async def update_telegram_presence(pool, telegram_user_id: int, message: dict[st
 
 async def send_telegram_text(chat_id: int, text: str, reply_to_message_id: int | None = None) -> dict[str, Any]:
     ensure_telegram_bot_config()
-
     payload: dict[str, Any] = {
         "chat_id": chat_id,
         "text": text[:4000] if text else "Пустой ответ от ассистента.",
@@ -185,6 +182,20 @@ async def send_telegram_text(chat_id: int, text: str, reply_to_message_id: int |
         )
         r.raise_for_status()
         return r.json()
+
+
+async def send_agent_loading_message_if_possible(
+    chat_id: int | None,
+    reply_to_message_id: int | None = None,
+) -> None:
+    if not chat_id:
+        return
+
+    try:
+        await send_telegram_text(chat_id, AGENT_LOADING_TEXT, reply_to_message_id)
+    except Exception as exc:  # noqa: BLE001
+        # Не валим основной запрос из-за ошибки отправки промежуточного сообщения.
+        print(f"[telegram] could not send loading message: {exc}")
 
 
 async def set_telegram_webhook() -> dict[str, Any]:
@@ -207,14 +218,18 @@ async def set_telegram_webhook() -> dict[str, Any]:
 
 async def get_telegram_webhook_info() -> dict[str, Any]:
     ensure_telegram_bot_config()
-
     async with httpx.AsyncClient(timeout=30) as client:
         r = await client.get(f"{TELEGRAM_API_BASE}/bot{TELEGRAM_BOT_TOKEN}/getWebhookInfo")
         r.raise_for_status()
         return r.json()
 
 
-async def ensure_instance_started_for_telegram(pool, user_id: int) -> None:
+async def ensure_instance_started_for_telegram(
+    pool,
+    user_id: int,
+    loading_chat_id: int | None = None,
+    loading_reply_to_message_id: int | None = None,
+) -> None:
     row = await pool.fetchrow(
         """
         SELECT status
@@ -227,8 +242,11 @@ async def ensure_instance_started_for_telegram(pool, user_id: int) -> None:
         raise HTTPException(status_code=404, detail="Instance not found")
 
     loop = asyncio.get_running_loop()
+    loading_message_sent = False
 
     if row["status"] != "running":
+        await send_agent_loading_message_if_possible(loading_chat_id, loading_reply_to_message_id)
+        loading_message_sent = True
         await sync_instance_to_admin_settings(pool, user_id, force_status="running")
     else:
         try:
@@ -237,14 +255,23 @@ async def ensure_instance_started_for_telegram(pool, user_id: int) -> None:
                 lambda: ensure_container_started(user_id),
             )
         except RuntimeError as exc:
+            # БД могла считать инстанс running, хотя Docker реально отсутствует или выключен.
+            await send_agent_loading_message_if_possible(loading_chat_id, loading_reply_to_message_id)
+            loading_message_sent = True
+
             if "not found" not in str(exc).lower():
                 raise
+
             await sync_instance_to_admin_settings(pool, user_id, force_status="running")
 
     await pool.execute(
         "UPDATE user_instances SET status='running', stopped_at=NULL WHERE user_id=$1",
         user_id,
     )
+
+    # loading_message_sent пока оставлен явно: удобно будет расширить логику,
+    # если потом понадобится писать разные статусы запуска.
+    _ = loading_message_sent
 
 
 async def wait_for_instance_http(user_id: int, gateway_token: str, timeout_seconds: int = 180) -> str:
@@ -283,7 +310,14 @@ async def wait_for_instance_http(user_id: int, gateway_token: str, timeout_secon
     raise RuntimeError(f"Gateway did not become ready for user {user_id}: {last_error}")
 
 
-async def route_telegram_message_to_instance(pool, user_id: int, text: str, session_key: str) -> str:
+async def route_telegram_message_to_instance(
+    pool,
+    user_id: int,
+    text: str,
+    session_key: str,
+    loading_chat_id: int | None = None,
+    loading_reply_to_message_id: int | None = None,
+) -> str:
     lock = await get_instance_lock(user_id)
 
     async with lock:
@@ -302,7 +336,12 @@ async def route_telegram_message_to_instance(pool, user_id: int, text: str, sess
         if not gateway_token:
             raise RuntimeError("Instance gateway token is missing")
 
-        await ensure_instance_started_for_telegram(pool, user_id)
+        await ensure_instance_started_for_telegram(
+            pool,
+            user_id,
+            loading_chat_id=loading_chat_id,
+            loading_reply_to_message_id=loading_reply_to_message_id,
+        )
 
         ip = await wait_for_instance_http(user_id, gateway_token, timeout_seconds=180)
 
@@ -344,7 +383,6 @@ def extract_output_text(data: dict[str, Any]) -> str:
                     parts.append(str(content["text"]).strip())
         elif item.get("type") == "output_text" and item.get("text"):
             parts.append(str(item["text"]).strip())
-
     return "\n\n".join(p for p in parts if p)
 
 

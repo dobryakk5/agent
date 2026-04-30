@@ -258,6 +258,26 @@ def start_instance(user_id: int):
     except docker.errors.NotFound:
         raise RuntimeError(f"Container {container_name} not found — provision the instance first")
 
+def ensure_container_started(user_id: int) -> dict:
+    container_name = _get_container_name(user_id)
+
+    try:
+        c = client.containers.get(container_name)
+    except docker.errors.NotFound:
+        raise RuntimeError(f"Container {container_name} not found — provision the instance first")
+
+    c.reload()
+
+    if c.status != "running":
+        c.start()
+        c.reload()
+
+    return {
+        "container_name": container_name,
+        "status": c.status,
+        "running": c.status == "running",
+        "container_id": c.short_id,
+    }
 
 def remove_instance(user_id: int):
     container_name = _get_container_name(user_id)

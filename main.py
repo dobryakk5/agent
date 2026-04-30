@@ -597,7 +597,14 @@ async def _handle_telegram_update(pool, update: dict) -> None:
 
     session_key = f"telegram:{telegram_user_id}:chat:{chat_id}"
     try:
-        response_text = await route_telegram_message_to_instance(pool, int(link["user_id"]), text, session_key)
+        response_text = await route_telegram_message_to_instance(
+            pool,
+            int(link["user_id"]),
+            text,
+            session_key,
+            loading_chat_id=chat_id,
+            loading_reply_to_message_id=reply_to_message_id,
+)
     except Exception as exc:  # noqa: BLE001
         try:
             await send_telegram_text(chat_id, f"Ошибка при обращении к контейнеру: {exc}", reply_to_message_id)
