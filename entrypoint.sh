@@ -83,7 +83,7 @@ cfg = {
     },
     "channels": {"telegram": {"enabled": False}},
     "browser": {
-        "enabled": False,
+        "enabled": True,
         "executablePath": "/usr/bin/chromium",
         "headless": True,
         "noSandbox": True,
