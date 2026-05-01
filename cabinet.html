@@ -621,40 +621,53 @@
       <div style="font-size:12px; color:var(--muted)" id="agent-hint"></div>
     </div>
 
-    <div class="card" id="llm-card" style="display:none">
-      <div class="card-header">
-        <span class="card-title">Базовая модель</span>
-        <button class="btn-ghost" style="font-size:12px" onclick="toggleLLMForm()">Изменить</button>
+<div class="card" id="llm-card" style="display:none">
+  <div class="card-header">
+    <span class="card-title">Модель агента</span>
+    <button class="btn-ghost" style="font-size:12px" onclick="toggleLLMForm()">Изменить</button>
+  </div>
+  <div id="llm-info" style="font-size:13px; color:var(--muted); margin-bottom:4px"></div>
+  <div id="llm-form" style="display:none; margin-top:12px">
+    <div style="display:grid; gap:8px; margin-bottom:12px">
+      <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:var(--fg)">
+        <input type="radio" name="llm-mode" value="base" id="llm-mode-base" onchange="onLLMModeChange()">
+        <span>Базовая модель</span>
+      </label>
+      <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:var(--fg)">
+        <input type="radio" name="llm-mode" value="custom" id="llm-mode-custom" onchange="onLLMModeChange()">
+        <span>Особенная модель</span>
+      </label>
+    </div>
+
+    <div id="llm-custom-fields" style="display:none">
+      <div style="margin-bottom:10px">
+        <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px">Провайдер</label>
+        <select id="llm-platform" onchange="onLLMPlatformChange()" style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--fg); font-size:13px">
+          <option value="openrouter">OpenRouter</option>
+          <option value="anthropic">Anthropic</option>
+          <option value="openai">OpenAI</option>
+        </select>
       </div>
-      <div id="llm-info" style="font-size:13px; color:var(--muted); margin-bottom:4px"></div>
-      <div id="llm-form" style="display:none; margin-top:12px">
-        <div style="margin-bottom:10px">
-          <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px">Платформа</label>
-          <select id="llm-platform" onchange="onLLMPlatformChange()" style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--fg); font-size:13px">
-            <option value="">По умолчанию (глобальные настройки)</option>
-            <option value="openrouter">OpenRouter</option>
-            <option value="anthropic">Anthropic</option>
-            <option value="openai">OpenAI</option>
-          </select>
-        </div>
-        <div style="margin-bottom:10px">
-          <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px">Базовая модель</label>
-          <input id="llm-model-input" list="llm-model-options" type="text" placeholder="openrouter/free"
-            style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--fg); font-size:13px; box-sizing:border-box">
-          <datalist id="llm-model-options"></datalist>
-          <div style="font-size:11px; color:var(--muted); margin-top:4px">Можно выбрать подсказку или вписать свой slug модели для выбранного провайдера.</div>
-        </div>
-        <div style="margin-bottom:12px">
-          <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px">API ключ <span style="opacity:.6">(необязательно)</span></label>
-          <input id="llm-api-key" type="password" placeholder="sk-..." autocomplete="off"
-            style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--fg); font-size:13px; box-sizing:border-box">
-        </div>
-        <div style="display:flex; gap:8px">
-          <button class="btn-sm" onclick="saveLLMSettings()" id="llm-save-btn">Сохранить</button>
-          <button class="btn-ghost" style="font-size:12px" onclick="resetLLMSettings()">Сбросить</button>
-        </div>
+      <div style="margin-bottom:10px">
+        <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px">Модель</label>
+        <input id="llm-model-input" list="llm-model-options" type="text" placeholder="model slug"
+          style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--fg); font-size:13px; box-sizing:border-box">
+        <datalist id="llm-model-options"></datalist>
+        <div style="font-size:11px; color:var(--muted); margin-top:4px">Можно выбрать подсказку или вписать свой вариант модели.</div>
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px">API ключ</label>
+        <input id="llm-api-key" type="password" placeholder="sk-..." autocomplete="off"
+          style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--fg); font-size:13px; box-sizing:border-box">
       </div>
     </div>
+
+    <div style="display:flex; gap:8px">
+      <button class="btn-sm" onclick="saveLLMSettings()" id="llm-save-btn">Сохранить</button>
+      <button class="btn-ghost" style="font-size:12px" onclick="resetLLMSettings()">Базовая модель</button>
+    </div>
+  </div>
+</div>
 
     <!-- Features -->
     <div class="card">
@@ -908,9 +921,7 @@ function renderStatus() {
     toggleBtn.style.display = 'none';
     updateBtn.style.display = 'none';
   }
-
-  const modelName = models.find(m => m.id === inst.llm_model)?.name || inst.llm_model || '—';
-  info.innerHTML = `<strong>${inst.container_name}</strong> · ${modelName}`;
+  info.innerHTML = `<strong>${inst.container_name}</strong>`;
   toggleBtn.style.display = 'inline-block';
   updateBtn.style.display = 'inline-block';
 }
@@ -924,26 +935,19 @@ function renderLLMCard() {
     return;
   }
 
-  const allModels = statusData?.all_models || {};
-  const userPlatform = inst.user_platform || '';
-  const userModel = inst.user_llm_model || '';
-  const hasKey = Boolean(inst.has_custom_api_key);
-  const effectivePlatform = inst.platform || statusData?.active_platform || 'openrouter';
-  const effectiveModel = inst.llm_model || '';
-  const platformKey = userPlatform || effectivePlatform;
+  const isCustom = Boolean(inst.user_platform || inst.user_llm_model || inst.has_custom_api_key);
 
   card.style.display = '';
-  if (userPlatform || userModel || hasKey) {
-    const platformLabel = { anthropic: 'Anthropic', openrouter: 'OpenRouter', openai: 'OpenAI' }[platformKey] || platformKey;
-    const modelLabel = (allModels[platformKey] || []).find(m => m.id === userModel)?.name || userModel || effectiveModel || '—';
-    info.innerHTML = `<strong>${platformLabel}</strong> · ${modelLabel}${hasKey ? ' · <span style="color:var(--muted)">свой API key</span>' : ''}`;
-  } else {
-    info.innerHTML = `<span style="color:var(--muted)">Глобальная базовая модель: <strong>${effectivePlatform}</strong> · ${effectiveModel || '—'}</span>`;
-  }
+  info.innerHTML = isCustom
+    ? 'Используется: <strong>Особенная модель</strong>'
+    : 'Используется: <strong>Базовая модель</strong>';
 
-  document.getElementById('llm-platform').value = userPlatform;
-  fillModelOptions(userPlatform || effectivePlatform, userModel || '');
+  document.getElementById('llm-mode-base').checked = !isCustom;
+  document.getElementById('llm-mode-custom').checked = isCustom;
+  document.getElementById('llm-platform').value = inst.user_platform || 'openrouter';
+  fillModelOptions(document.getElementById('llm-platform').value, inst.user_llm_model || '');
   document.getElementById('llm-api-key').value = '';
+  onLLMModeChange();
 }
 
 function fillModelOptions(platform, selectedId) {
@@ -954,18 +958,19 @@ function fillModelOptions(platform, selectedId) {
   list.innerHTML = models.map(m =>
     `<option value="${m.id}">${m.name} — ${m.description}</option>`
   ).join('');
-  input.placeholder = models[0]?.id || statusData?.default_model || 'model slug';
+  input.placeholder = 'model slug';
   input.value = selectedId || '';
 }
 
+function onLLMModeChange() {
+  const mode = document.querySelector('input[name="llm-mode"]:checked')?.value || 'base';
+  document.getElementById('llm-custom-fields').style.display = mode === 'custom' ? '' : 'none';
+}
+
 function onLLMPlatformChange() {
-  const selectedPlatform = document.getElementById('llm-platform').value;
-  const platform = selectedPlatform || statusData?.active_platform || 'openrouter';
-  fillModelOptions(platform, '');
-  if (selectedPlatform) {
-    const models = statusData?.all_models?.[platform] || [];
-    document.getElementById('llm-model-input').value = models[0]?.id || '';
-  }
+  const platform = document.getElementById('llm-platform').value || 'openrouter';
+  const currentValue = document.getElementById('llm-model-input').value.trim();
+  fillModelOptions(platform, currentValue);
 }
 
 function toggleLLMForm() {
@@ -975,22 +980,31 @@ function toggleLLMForm() {
 
 async function saveLLMSettings() {
   const btn = document.getElementById('llm-save-btn');
-  const platform = document.getElementById('llm-platform').value;
+  const mode = document.querySelector('input[name="llm-mode"]:checked')?.value || 'base';
+  const platform = document.getElementById('llm-platform').value || 'openrouter';
   const llm_model = document.getElementById('llm-model-input').value.trim();
   const api_key = document.getElementById('llm-api-key').value.trim();
 
-  if (platform && !llm_model) {
-    toast('Выберите модель', 'error');
-    return;
+  let payload = { platform: '', llm_model: '', api_key: '' };
+  if (mode === 'custom') {
+    if (!llm_model) {
+      toast('Укажите модель', 'error');
+      return;
+    }
+    if (!api_key && !statusData?.instance?.has_custom_api_key) {
+      toast('Укажите API ключ для особенной модели', 'error');
+      return;
+    }
+    payload = { platform, llm_model, api_key };
   }
 
   btn.disabled = true;
   btn.textContent = 'Сохраняю…';
   try {
-    await api('POST', '/cabinet/llm', { platform, llm_model, api_key });
+    await api('POST', '/cabinet/llm', payload);
     await loadStatus();
     document.getElementById('llm-form').style.display = 'none';
-    toast('Настройки модели сохранены', 'success');
+    toast(mode === 'custom' ? 'Особенная модель сохранена' : 'Выбрана базовая модель', 'success');
   } catch (e) {
     toast(e.message, 'error');
   } finally {
@@ -1000,12 +1014,11 @@ async function saveLLMSettings() {
 }
 
 async function resetLLMSettings() {
-  if (!confirm('Сбросить пользовательские настройки и использовать глобальные?')) return;
   try {
     await api('POST', '/cabinet/llm', { platform: '', llm_model: '', api_key: '' });
     await loadStatus();
     document.getElementById('llm-form').style.display = 'none';
-    toast('Настройки сброшены', 'success');
+    toast('Выбрана базовая модель', 'success');
   } catch (e) {
     toast(e.message, 'error');
   }
