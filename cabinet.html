@@ -629,11 +629,11 @@
   <div id="llm-info" style="font-size:13px; color:var(--muted); margin-bottom:4px"></div>
   <div id="llm-form" style="display:none; margin-top:12px">
     <div style="display:grid; gap:8px; margin-bottom:12px">
-      <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:var(--fg)">
+      <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text)">
         <input type="radio" name="llm-mode" value="base" id="llm-mode-base" onchange="onLLMModeChange()">
         <span>Базовая модель</span>
       </label>
-      <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:var(--fg)">
+      <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text)">
         <input type="radio" name="llm-mode" value="custom" id="llm-mode-custom" onchange="onLLMModeChange()">
         <span>Особенная модель</span>
       </label>
@@ -642,7 +642,7 @@
     <div id="llm-custom-fields" style="display:none">
       <div style="margin-bottom:10px">
         <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px">Провайдер</label>
-        <select id="llm-platform" onchange="onLLMPlatformChange()" style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--fg); font-size:13px">
+        <select id="llm-platform" onchange="onLLMPlatformChange()" style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:13px">
           <option value="openrouter">OpenRouter</option>
           <option value="anthropic">Anthropic</option>
           <option value="openai">OpenAI</option>
@@ -651,14 +651,14 @@
       <div style="margin-bottom:10px">
         <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px">Модель</label>
         <input id="llm-model-input" list="llm-model-options" type="text" placeholder="model slug"
-          style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--fg); font-size:13px; box-sizing:border-box">
+          style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:13px; box-sizing:border-box">
         <datalist id="llm-model-options"></datalist>
         <div style="font-size:11px; color:var(--muted); margin-top:4px">Можно выбрать подсказку или вписать свой вариант модели.</div>
       </div>
       <div style="margin-bottom:12px">
         <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px">API ключ</label>
         <input id="llm-api-key" type="password" placeholder="sk-..." autocomplete="off"
-          style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--fg); font-size:13px; box-sizing:border-box">
+          style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:13px; box-sizing:border-box">
       </div>
     </div>
 
@@ -951,14 +951,26 @@ function renderLLMCard() {
   onLLMModeChange();
 }
 
+function escapeHTML(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[ch]));
+}
+
 function fillModelOptions(platform, selectedId) {
   const allModels = statusData?.all_models || {};
   const list = document.getElementById('llm-model-options');
   const input = document.getElementById('llm-model-input');
   const models = allModels[platform] || [];
-  list.innerHTML = models.map(m =>
-    `<option value="${m.id}">${m.name} — ${m.description}</option>`
-  ).join('');
+  list.innerHTML = models.map(m => {
+    const optionValue = escapeHTML(m.id);
+    const optionLabel = escapeHTML(`${m.name} — ${m.description}`);
+    return `<option value="${optionValue}">${optionLabel}</option>`;
+  }).join('');
   input.placeholder = 'model slug';
   input.value = selectedId || '';
 }
