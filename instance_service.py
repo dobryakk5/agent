@@ -42,7 +42,8 @@ async def sync_instance_to_admin_settings(
 ) -> dict[str, str]:
     row = await pool.fetchrow(
         """
-        SELECT user_id, api_key, gateway_token, status
+        SELECT user_id, api_key, user_api_key, gateway_token, status,
+               user_platform, user_llm_model, user_tool_use_model
         FROM user_instances
         WHERE user_id = $1
         """,
@@ -52,12 +53,13 @@ async def sync_instance_to_admin_settings(
         raise HTTPException(status_code=404, detail="Instance not found")
 
     settings = await get_settings(pool)
-    platform = (settings.get("platform") or "").strip()
-    llm_model = (settings.get("llm_model") or "").strip()
+    platform = (row["user_platform"] or "").strip() or (settings.get("platform") or "").strip()
+    llm_model = (row["user_llm_model"] or "").strip() or (settings.get("llm_model") or "").strip()
     if not platform or not llm_model:
         raise HTTPException(status_code=400, detail="Admin settings are incomplete. Set platform and model in /admin")
+    tool_use_model = (row["user_tool_use_model"] or "").strip()
     target_status = force_status or row["status"] or "running"
-    api_key = resolve_api_key(platform, None, row["api_key"])
+    api_key = resolve_api_key(platform, None, row["user_api_key"] or row["api_key"])
 
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(
@@ -68,6 +70,7 @@ async def sync_instance_to_admin_settings(
             api_key=api_key,
             llm_model=llm_model,
             gateway_token=row["gateway_token"],
+            tool_use_model=tool_use_model,
         ),
     )
 

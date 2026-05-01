@@ -175,8 +175,9 @@ def _container_environment(
     api_key: str,
     llm_model: str,
     gateway_token: str,
+    tool_use_model: str = "",
 ):
-    return {
+    env = {
         "USER_ID": str(user_id),
         "PLATFORM": platform,
         "API_KEY": api_key,
@@ -185,11 +186,14 @@ def _container_environment(
         "GOOGLE_TOKENS_JSON_PATH": GOOGLE_TOKENS_JSON_IN_CONTAINER,
         "GATEWAY_AUTH_TOKEN": gateway_token,
     }
+    if tool_use_model:
+        env["TOOL_USE_MODEL"] = tool_use_model
+    return env
 
 
 def _run_container(container_name: str, user_id: int, platform: str,
                    api_key: str, llm_model: str, gateway_token: str,
-                   network_name: str):
+                   network_name: str, tool_use_model: str = ""):
     return client.containers.run(
         image="openclaw-agent:latest",
         name=container_name,
@@ -200,6 +204,7 @@ def _run_container(container_name: str, user_id: int, platform: str,
             api_key=api_key,
             llm_model=llm_model,
             gateway_token=gateway_token,
+            tool_use_model=tool_use_model,
         ),
         network=network_name,
         detach=True,
@@ -220,6 +225,7 @@ def create_instance(
     api_key: str,
     llm_model: str,
     gateway_token: str,
+    tool_use_model: str = "",
 ) -> dict:
     volume_name = _get_data_volume_name(user_id)
     secrets_volume_name = get_secrets_volume_name(user_id)
@@ -231,7 +237,14 @@ def create_instance(
     ensure_network(network_name)
 
     container = _run_container(
-        container_name, user_id, platform, api_key, llm_model, gateway_token, network_name
+        container_name,
+        user_id,
+        platform,
+        api_key,
+        llm_model,
+        gateway_token,
+        network_name,
+        tool_use_model=tool_use_model,
     )
 
     return {
@@ -356,6 +369,7 @@ def recreate_container(
     api_key: str,
     llm_model: str,
     gateway_token: str,
+    tool_use_model: str = "",
 ) -> dict:
     volume_name = _get_data_volume_name(user_id)
     secrets_volume_name = get_secrets_volume_name(user_id)
@@ -374,7 +388,14 @@ def recreate_container(
         pass
 
     container = _run_container(
-        container_name, user_id, platform, api_key, llm_model, gateway_token, network_name
+        container_name,
+        user_id,
+        platform,
+        api_key,
+        llm_model,
+        gateway_token,
+        network_name,
+        tool_use_model=tool_use_model,
     )
 
     return {

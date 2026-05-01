@@ -14,6 +14,7 @@ mkdir -p "$CONFIG_DIR" "$WORKSPACE" "$MEMORY_DIR" "/run/secrets/user" "/run/secr
 : "${PLATFORM:=openrouter}"
 : "${API_KEY:?API_KEY is required}"
 : "${LLM_MODEL:?LLM_MODEL is required}"
+: "${TOOL_USE_MODEL:=}"
 : "${GATEWAY_AUTH_TOKEN:?GATEWAY_AUTH_TOKEN is required}"
 : "${GOOGLE_OAUTH_JSON_PATH:=/run/secrets/app/google-oauth.json}"
 : "${GOOGLE_TOKENS_JSON_PATH:=/run/secrets/user/google-tokens.json}"
@@ -40,6 +41,7 @@ import json, os, sys
 platform           = os.environ["PLATFORM"]
 api_key            = os.environ["API_KEY"]
 llm_model          = os.environ["LLM_MODEL"]
+tool_use_model     = os.environ.get("TOOL_USE_MODEL", "").strip()
 gateway_auth_token = os.environ["GATEWAY_AUTH_TOKEN"]
 workspace          = os.environ.get("WORKSPACE", "/workspace")
 google_oauth_path  = os.environ.get("GOOGLE_OAUTH_JSON_PATH", "/run/secrets/app/google-oauth.json")
@@ -77,7 +79,10 @@ cfg = {
     "agents": {
         "defaults": {
             "workspace": workspace,
-            "model": {"primary": llm_model},
+            "model": {
+                "primary": llm_model,
+                **({"toolUse": tool_use_model} if tool_use_model else {}),
+            },
             "timeoutSeconds": 120,
         }
     },
@@ -110,6 +115,7 @@ PY
 
 echo "[entrypoint] Platform: $PLATFORM"
 echo "[entrypoint] Model: $LLM_MODEL"
+echo "[entrypoint] Tool-use model: ${TOOL_USE_MODEL:-same as primary}"
 echo "[entrypoint] Workspace: $WORKSPACE"
 echo "[entrypoint] Provider env key: $ENV_KEY"
 echo "[entrypoint] HTTP Responses enabled: yes"

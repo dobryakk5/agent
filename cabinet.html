@@ -621,6 +621,44 @@
       <div style="font-size:12px; color:var(--muted)" id="agent-hint"></div>
     </div>
 
+    <div class="card" id="llm-card" style="display:none">
+      <div class="card-header">
+        <span class="card-title">Модель</span>
+        <button class="btn-ghost" style="font-size:12px" onclick="toggleLLMForm()">Изменить</button>
+      </div>
+      <div id="llm-info" style="font-size:13px; color:var(--muted); margin-bottom:4px"></div>
+      <div id="llm-form" style="display:none; margin-top:12px">
+        <div style="margin-bottom:10px">
+          <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px">Платформа</label>
+          <select id="llm-platform" onchange="onLLMPlatformChange()" style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--fg); font-size:13px">
+            <option value="">По умолчанию (глобальные настройки)</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="openai">OpenAI</option>
+          </select>
+        </div>
+        <div style="margin-bottom:10px">
+          <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px">Модель</label>
+          <select id="llm-model-select" style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--fg); font-size:13px"></select>
+        </div>
+        <div style="margin-bottom:12px">
+          <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px">Модель для инструментов <span style="opacity:.6">(browser, search и т.п.)</span></label>
+          <input id="llm-tool-use-model" type="text" placeholder="openrouter/openai/gpt-4o-mini"
+            style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--fg); font-size:13px; box-sizing:border-box">
+          <div style="font-size:11px; color:var(--muted); margin-top:4px">Если оставить пустым, будет использоваться основная модель.</div>
+        </div>
+        <div style="margin-bottom:12px">
+          <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px">API ключ <span style="opacity:.6">(необязательно)</span></label>
+          <input id="llm-api-key" type="password" placeholder="sk-..." autocomplete="off"
+            style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--fg); font-size:13px; box-sizing:border-box">
+        </div>
+        <div style="display:flex; gap:8px">
+          <button class="btn-sm" onclick="saveLLMSettings()" id="llm-save-btn">Сохранить</button>
+          <button class="btn-ghost" style="font-size:12px" onclick="resetLLMSettings()">Сбросить</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Features -->
     <div class="card">
       <div class="card-header">
@@ -823,6 +861,7 @@ async function loadStatus() {
   try {
     statusData = await api('GET', '/cabinet/status');
     renderStatus();
+    renderLLMCard();
     renderFeatures();
   } catch (e) {
     console.error('loadStatus error', e);
@@ -877,6 +916,100 @@ function renderStatus() {
   info.innerHTML = `<strong>${inst.container_name}</strong> · ${modelName}`;
   toggleBtn.style.display = 'inline-block';
   updateBtn.style.display = 'inline-block';
+}
+
+function renderLLMCard() {
+  const inst = statusData?.instance;
+  const card = document.getElementById('llm-card');
+  const info = document.getElementById('llm-info');
+  if (!inst) {
+    card.style.display = 'none';
+    return;
+  }
+
+  const allModels = statusData?.all_models || {};
+  const userPlatform = inst.user_platform || '';
+  const userModel = inst.user_llm_model || '';
+  const userToolUse = inst.user_tool_use_model || '';
+  const hasKey = Boolean(inst.has_custom_api_key);
+  const effectivePlatform = inst.platform || statusData?.active_platform || 'openrouter';
+  const effectiveModel = inst.llm_model || '';
+  const platformKey = userPlatform || effectivePlatform;
+
+  card.style.display = '';
+  if (userPlatform || userModel || userToolUse || hasKey) {
+    const platformLabel = { anthropic: 'Anthropic', openrouter: 'OpenRouter', openai: 'OpenAI' }[platformKey] || platformKey;
+    const modelLabel = (allModels[platformKey] || []).find(m => m.id === userModel)?.name || userModel || effectiveModel || '—';
+    const toolLabel = userToolUse ? ` · 🔧 <span style="color:var(--muted);font-size:11px">${userToolUse}</span>` : '';
+    info.innerHTML = `<strong>${platformLabel}</strong> · ${modelLabel}${toolLabel}${hasKey ? ' · <span style="color:var(--muted)">свой API key</span>' : ''}`;
+  } else {
+    const toolLabel = userToolUse ? ` · 🔧 <span style="color:var(--muted);font-size:11px">${userToolUse}</span>` : '';
+    info.innerHTML = `<span style="color:var(--muted)">Глобальные настройки: <strong>${effectivePlatform}</strong> · ${effectiveModel || '—'}${toolLabel}</span>`;
+  }
+
+  document.getElementById('llm-platform').value = userPlatform;
+  fillModelOptions(userPlatform || effectivePlatform, userModel);
+  document.getElementById('llm-tool-use-model').value = userToolUse;
+  document.getElementById('llm-api-key').value = '';
+}
+
+function fillModelOptions(platform, selectedId) {
+  const allModels = statusData?.all_models || {};
+  const sel = document.getElementById('llm-model-select');
+  const models = allModels[platform] || [];
+  sel.innerHTML = models.map(m =>
+    `<option value="${m.id}" ${m.id === selectedId ? 'selected' : ''}>${m.name} — ${m.description}</option>`
+  ).join('');
+  if (!sel.value && models.length) sel.value = models[0].id;
+}
+
+function onLLMPlatformChange() {
+  const platform = document.getElementById('llm-platform').value || statusData?.active_platform || 'openrouter';
+  fillModelOptions(platform, '');
+}
+
+function toggleLLMForm() {
+  const form = document.getElementById('llm-form');
+  form.style.display = form.style.display === 'none' ? '' : 'none';
+}
+
+async function saveLLMSettings() {
+  const btn = document.getElementById('llm-save-btn');
+  const platform = document.getElementById('llm-platform').value;
+  const llm_model = document.getElementById('llm-model-select').value;
+  const tool_use_model = document.getElementById('llm-tool-use-model').value.trim();
+  const api_key = document.getElementById('llm-api-key').value.trim();
+
+  if (platform && !llm_model) {
+    toast('Выберите модель', 'error');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Сохраняю…';
+  try {
+    await api('POST', '/cabinet/llm', { platform, llm_model, tool_use_model, api_key });
+    await loadStatus();
+    document.getElementById('llm-form').style.display = 'none';
+    toast('Настройки модели сохранены', 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Сохранить';
+  }
+}
+
+async function resetLLMSettings() {
+  if (!confirm('Сбросить пользовательские настройки и использовать глобальные?')) return;
+  try {
+    await api('POST', '/cabinet/llm', { platform: '', llm_model: '', tool_use_model: '', api_key: '' });
+    await loadStatus();
+    document.getElementById('llm-form').style.display = 'none';
+    toast('Настройки сброшены', 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
 }
 
 async function toggleAgent() {

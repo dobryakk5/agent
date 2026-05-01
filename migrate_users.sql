@@ -13,7 +13,11 @@ ALTER TABLE user_instances
     ADD COLUMN IF NOT EXISTS google_connected_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS api_key             TEXT        NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS secrets_volume_name TEXT        NOT NULL DEFAULT '',
-    ADD COLUMN IF NOT EXISTS gateway_token       TEXT        NOT NULL DEFAULT '';
+    ADD COLUMN IF NOT EXISTS gateway_token       TEXT        NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS user_platform       TEXT,
+    ADD COLUMN IF NOT EXISTS user_llm_model      TEXT,
+    ADD COLUMN IF NOT EXISTS user_api_key        TEXT        NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS user_tool_use_model TEXT;
 
 UPDATE user_instances
 SET gateway_token = gen_random_uuid()::text

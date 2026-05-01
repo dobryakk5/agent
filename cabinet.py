@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse
 
 from auth import get_current_user
 from docker_manager import recreate_container, stop_instance
-from instance_service import resolve_api_key, sync_instance_to_admin_settings
+from instance_service import PLATFORMS, resolve_api_key, sync_instance_to_admin_settings
 from pydantic import BaseModel
 from settings_store import get_settings
 from telegram_gateway import (
@@ -90,6 +90,13 @@ class UpdateCabinetModelRequest(BaseModel):
     llm_model: str
 
 
+class UpdateUserLLMRequest(BaseModel):
+    platform: str = ""
+    llm_model: str = ""
+    api_key: str = ""
+    tool_use_model: str = ""
+
+
 def _get_models_for_platform(platform: str | None) -> list[dict[str, str]]:
     return MODEL_OPTIONS.get((platform or "").strip(), MODEL_OPTIONS["openrouter"])
 
@@ -107,7 +114,9 @@ async def cabinet_status(request: Request, user=Depends(get_current_user)):
     instance = await pool.fetchrow(
         """
         SELECT container_name, status, platform, llm_model, created_at,
-               stopped_at, google_connected, google_connected_at
+               stopped_at, google_connected, google_connected_at,
+               user_platform, user_llm_model, user_tool_use_model,
+               CASE WHEN user_api_key != '' THEN true ELSE false END AS has_custom_api_key
         FROM user_instances
         WHERE user_id = $1
         """,
@@ -123,7 +132,13 @@ async def cabinet_status(request: Request, user=Depends(get_current_user)):
     )
     settings = await get_settings(pool)
     instance_dict = dict(instance) if instance else None
-    model_platform = (instance_dict or {}).get("platform") or settings.get("platform") or "openrouter"
+    active_platform = (
+        (instance_dict or {}).get("user_platform")
+        or (instance_dict or {}).get("platform")
+        or settings.get("platform")
+        or "openrouter"
+    )
+    model_platform = (instance_dict or {}).get("platform") or active_platform
     default_model = settings.get("llm_model") or ""
 
     return {
@@ -133,6 +148,9 @@ async def cabinet_status(request: Request, user=Depends(get_current_user)):
         "telegram_link": dict(telegram_link) if telegram_link else None,
         "default_model": default_model,
         "models": _get_models_for_platform(model_platform),
+        "all_models": MODEL_OPTIONS,
+        "platforms": list(MODEL_OPTIONS.keys()),
+        "active_platform": active_platform,
         "features": {
             "browser": {"enabled": False, "label": "Браузер", "soon": True},
             "reminders": {"enabled": False, "label": "Напоминания", "soon": True},
@@ -191,7 +209,7 @@ async def agent_restart(request: Request, user=Depends(get_current_user)):
     pool = request.app.state.pool
     row = await pool.fetchrow(
         """
-        SELECT platform, api_key, gateway_token, llm_model, status
+        SELECT platform, api_key, user_api_key, gateway_token, llm_model, status, user_tool_use_model
         FROM user_instances
         WHERE user_id = $1
         """,
@@ -204,16 +222,16 @@ async def agent_restart(request: Request, user=Depends(get_current_user)):
     if not llm_model:
         raise HTTPException(status_code=400, detail="Model is not configured for this instance")
 
-    api_key = resolve_api_key(row["platform"], None, row["api_key"])
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(
         None,
         lambda: recreate_container(
             user_id=user["user_id"],
             platform=row["platform"],
-            api_key=api_key,
+            api_key=resolve_api_key(row["platform"], None, row["user_api_key"] or row["api_key"]),
             llm_model=llm_model,
             gateway_token=row["gateway_token"],
+            tool_use_model=(row["user_tool_use_model"] or "").strip(),
         ),
     )
     await pool.execute(
@@ -273,7 +291,7 @@ async def cabinet_update_model(
     pool = request.app.state.pool
     row = await pool.fetchrow(
         """
-        SELECT platform, api_key, gateway_token, status
+        SELECT platform, api_key, gateway_token, status, user_tool_use_model
         FROM user_instances
         WHERE user_id = $1
         """,
@@ -297,6 +315,7 @@ async def cabinet_update_model(
             api_key=api_key,
             llm_model=llm_model,
             gateway_token=row["gateway_token"],
+            tool_use_model=(row["user_tool_use_model"] or "").strip(),
         ),
     )
     if target_status == "stopped":
@@ -318,6 +337,95 @@ async def cabinet_update_model(
         "ok": True,
         "container_id": result["container_id"],
         "llm_model": llm_model,
+        "status": target_status,
+    }
+
+
+@cabinet_router.post("/llm")
+async def cabinet_update_llm(
+    req: UpdateUserLLMRequest,
+    request: Request,
+    user=Depends(get_current_user),
+):
+    pool = request.app.state.pool
+    row = await pool.fetchrow(
+        """
+        SELECT platform, api_key, user_api_key, gateway_token, status
+        FROM user_instances
+        WHERE user_id = $1
+        """,
+        user["user_id"],
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Instance not found")
+
+    new_platform = req.platform.strip() or None
+    new_llm_model = req.llm_model.strip() or None
+    new_user_api_key = req.api_key.strip()
+    new_tool_use_model = req.tool_use_model.strip() or None
+
+    if new_platform and new_platform not in PLATFORMS:
+        raise HTTPException(status_code=400, detail=f"Unknown platform: {new_platform}. Use one of: {sorted(PLATFORMS)}")
+
+    settings = await get_settings(pool)
+    effective_platform = new_platform or (settings.get("platform") or "openrouter")
+    effective_model = new_llm_model or (settings.get("llm_model") or "")
+
+    if not effective_model:
+        raise HTTPException(status_code=400, detail="Model is required (set it in /admin or choose one here)")
+
+    effective_api_key = resolve_api_key(
+        effective_platform,
+        None,
+        new_user_api_key or row["user_api_key"] or row["api_key"],
+    )
+
+    target_status = row["status"] if row["status"] in {"running", "stopped"} else "running"
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        None,
+        lambda: recreate_container(
+            user_id=user["user_id"],
+            platform=effective_platform,
+            api_key=effective_api_key,
+            llm_model=effective_model,
+            gateway_token=row["gateway_token"],
+            tool_use_model=new_tool_use_model or "",
+        ),
+    )
+    if target_status == "stopped":
+        await loop.run_in_executor(None, lambda: stop_instance(user["user_id"]))
+
+    await pool.execute(
+        """
+        UPDATE user_instances
+        SET user_platform = $1,
+            user_llm_model = $2,
+            user_api_key = $3,
+            user_tool_use_model = $4,
+            platform = $5,
+            llm_model = $6,
+            status = $7,
+            stopped_at = CASE WHEN $7 = 'stopped' THEN now() ELSE NULL END
+        WHERE user_id = $8
+        """,
+        new_platform,
+        new_llm_model,
+        new_user_api_key,
+        new_tool_use_model,
+        effective_platform,
+        effective_model,
+        target_status,
+        user["user_id"],
+    )
+
+    return {
+        "ok": True,
+        "container_id": result["container_id"],
+        "platform": effective_platform,
+        "llm_model": effective_model,
+        "tool_use_model": new_tool_use_model or "",
+        "has_custom_api_key": bool(new_user_api_key),
         "status": target_status,
     }
 
