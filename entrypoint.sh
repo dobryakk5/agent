@@ -80,9 +80,7 @@ cfg = {
         "defaults": {
             "workspace": workspace,
             "model": {
-                "primary": llm_model,
-                **({"toolUse": tool_use_model} if tool_use_model else {}),
-            },
+                "primary": llm_model            },
             "timeoutSeconds": 120,
         }
     },
