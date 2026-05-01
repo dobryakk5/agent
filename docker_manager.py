@@ -175,7 +175,6 @@ def _container_environment(
     api_key: str,
     llm_model: str,
     gateway_token: str,
-    tool_use_model: str = "",
 ):
     env = {
         "USER_ID": str(user_id),
@@ -186,14 +185,12 @@ def _container_environment(
         "GOOGLE_TOKENS_JSON_PATH": GOOGLE_TOKENS_JSON_IN_CONTAINER,
         "GATEWAY_AUTH_TOKEN": gateway_token,
     }
-    if tool_use_model:
-        env["TOOL_USE_MODEL"] = tool_use_model
     return env
 
 
 def _run_container(container_name: str, user_id: int, platform: str,
                    api_key: str, llm_model: str, gateway_token: str,
-                   network_name: str, tool_use_model: str = ""):
+                   network_name: str):
     return client.containers.run(
         image="openclaw-agent:latest",
         name=container_name,
@@ -204,7 +201,6 @@ def _run_container(container_name: str, user_id: int, platform: str,
             api_key=api_key,
             llm_model=llm_model,
             gateway_token=gateway_token,
-            tool_use_model=tool_use_model,
         ),
         network=network_name,
         detach=True,
@@ -225,7 +221,6 @@ def create_instance(
     api_key: str,
     llm_model: str,
     gateway_token: str,
-    tool_use_model: str = "",
 ) -> dict:
     volume_name = _get_data_volume_name(user_id)
     secrets_volume_name = get_secrets_volume_name(user_id)
@@ -244,7 +239,6 @@ def create_instance(
         llm_model,
         gateway_token,
         network_name,
-        tool_use_model=tool_use_model,
     )
 
     return {
@@ -369,7 +363,6 @@ def recreate_container(
     api_key: str,
     llm_model: str,
     gateway_token: str,
-    tool_use_model: str = "",
 ) -> dict:
     volume_name = _get_data_volume_name(user_id)
     secrets_volume_name = get_secrets_volume_name(user_id)
@@ -395,7 +388,6 @@ def recreate_container(
         llm_model,
         gateway_token,
         network_name,
-        tool_use_model=tool_use_model,
     )
 
     return {

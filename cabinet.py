@@ -41,29 +41,19 @@ MODEL_OPTIONS = {
     ],
     "openrouter": [
         {
+            "id": "openrouter/free",
+            "name": "OpenRouter Free Router",
+            "description": "Бесплатный роутер OpenRouter: сам выбирает доступную free-модель.",
+        },
+        {
             "id": "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
-            "name": "Nemotron 3 Super 120B",
-            "description": "Бесплатный вариант по умолчанию через OpenRouter.",
+            "name": "Nemotron 3 Super 120B Free",
+            "description": "Конкретная бесплатная модель NVIDIA через OpenRouter.",
         },
         {
-            "id": "openrouter/google/gemini-2.5-pro:free",
-            "name": "Gemini 2.5 Pro",
-            "description": "Сильная универсальная модель через OpenRouter.",
-        },
-        {
-            "id": "openrouter/meta-llama/llama-4-maverick:free",
-            "name": "Llama 4 Maverick",
-            "description": "Быстрая open model для общих задач.",
-        },
-        {
-            "id": "openrouter/anthropic/claude-sonnet-4-6",
-            "name": "Claude Sonnet 4.6",
-            "description": "Claude через OpenRouter для сложных диалогов.",
-        },
-        {
-            "id": "openrouter/openai/gpt-4o",
-            "name": "GPT-4o",
-            "description": "Универсальная модель OpenAI через OpenRouter.",
+            "id": "openrouter/openai/gpt-oss-120b:free",
+            "name": "GPT-OSS 120B Free",
+            "description": "Конкретная бесплатная OpenAI OSS-модель через OpenRouter.",
         },
     ],
     "openai": [
@@ -94,7 +84,6 @@ class UpdateUserLLMRequest(BaseModel):
     platform: str = ""
     llm_model: str = ""
     api_key: str = ""
-    tool_use_model: str = ""
 
 
 def _get_models_for_platform(platform: str | None) -> list[dict[str, str]]:
@@ -115,7 +104,7 @@ async def cabinet_status(request: Request, user=Depends(get_current_user)):
         """
         SELECT container_name, status, platform, llm_model, created_at,
                stopped_at, google_connected, google_connected_at,
-               user_platform, user_llm_model, user_tool_use_model,
+               user_platform, user_llm_model,
                CASE WHEN user_api_key != '' THEN true ELSE false END AS has_custom_api_key
         FROM user_instances
         WHERE user_id = $1
@@ -209,7 +198,7 @@ async def agent_restart(request: Request, user=Depends(get_current_user)):
     pool = request.app.state.pool
     row = await pool.fetchrow(
         """
-        SELECT platform, api_key, user_api_key, gateway_token, llm_model, status, user_tool_use_model
+        SELECT platform, api_key, user_api_key, gateway_token, llm_model, status
         FROM user_instances
         WHERE user_id = $1
         """,
@@ -231,7 +220,6 @@ async def agent_restart(request: Request, user=Depends(get_current_user)):
             api_key=resolve_api_key(row["platform"], None, row["user_api_key"] or row["api_key"]),
             llm_model=llm_model,
             gateway_token=row["gateway_token"],
-            tool_use_model=(row["user_tool_use_model"] or "").strip(),
         ),
     )
     await pool.execute(
@@ -291,7 +279,7 @@ async def cabinet_update_model(
     pool = request.app.state.pool
     row = await pool.fetchrow(
         """
-        SELECT platform, api_key, gateway_token, status, user_tool_use_model
+        SELECT platform, api_key, gateway_token, status
         FROM user_instances
         WHERE user_id = $1
         """,
@@ -315,7 +303,6 @@ async def cabinet_update_model(
             api_key=api_key,
             llm_model=llm_model,
             gateway_token=row["gateway_token"],
-            tool_use_model=(row["user_tool_use_model"] or "").strip(),
         ),
     )
     if target_status == "stopped":
@@ -362,7 +349,6 @@ async def cabinet_update_llm(
     new_platform = req.platform.strip() or None
     new_llm_model = req.llm_model.strip() or None
     new_user_api_key = req.api_key.strip()
-    new_tool_use_model = req.tool_use_model.strip() or None
 
     if new_platform and new_platform not in PLATFORMS:
         raise HTTPException(status_code=400, detail=f"Unknown platform: {new_platform}. Use one of: {sorted(PLATFORMS)}")
@@ -390,7 +376,6 @@ async def cabinet_update_llm(
             api_key=effective_api_key,
             llm_model=effective_model,
             gateway_token=row["gateway_token"],
-            tool_use_model=new_tool_use_model or "",
         ),
     )
     if target_status == "stopped":
@@ -402,17 +387,15 @@ async def cabinet_update_llm(
         SET user_platform = $1,
             user_llm_model = $2,
             user_api_key = $3,
-            user_tool_use_model = $4,
-            platform = $5,
-            llm_model = $6,
-            status = $7,
-            stopped_at = CASE WHEN $7 = 'stopped' THEN now() ELSE NULL END
-        WHERE user_id = $8
+            platform = $4,
+            llm_model = $5,
+            status = $6,
+            stopped_at = CASE WHEN $6 = 'stopped' THEN now() ELSE NULL END
+        WHERE user_id = $7
         """,
         new_platform,
         new_llm_model,
         new_user_api_key,
-        new_tool_use_model,
         effective_platform,
         effective_model,
         target_status,
@@ -424,7 +407,6 @@ async def cabinet_update_llm(
         "container_id": result["container_id"],
         "platform": effective_platform,
         "llm_model": effective_model,
-        "tool_use_model": new_tool_use_model or "",
         "has_custom_api_key": bool(new_user_api_key),
         "status": target_status,
     }

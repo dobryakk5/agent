@@ -43,7 +43,7 @@ async def sync_instance_to_admin_settings(
     row = await pool.fetchrow(
         """
         SELECT user_id, api_key, user_api_key, gateway_token, status,
-               user_platform, user_llm_model, user_tool_use_model
+               user_platform, user_llm_model
         FROM user_instances
         WHERE user_id = $1
         """,
@@ -57,7 +57,6 @@ async def sync_instance_to_admin_settings(
     llm_model = (row["user_llm_model"] or "").strip() or (settings.get("llm_model") or "").strip()
     if not platform or not llm_model:
         raise HTTPException(status_code=400, detail="Admin settings are incomplete. Set platform and model in /admin")
-    tool_use_model = (row["user_tool_use_model"] or "").strip()
     target_status = force_status or row["status"] or "running"
     api_key = resolve_api_key(platform, None, row["user_api_key"] or row["api_key"])
 
@@ -70,7 +69,6 @@ async def sync_instance_to_admin_settings(
             api_key=api_key,
             llm_model=llm_model,
             gateway_token=row["gateway_token"],
-            tool_use_model=tool_use_model,
         ),
     )
 

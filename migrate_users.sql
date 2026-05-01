@@ -16,8 +16,7 @@ ALTER TABLE user_instances
     ADD COLUMN IF NOT EXISTS gateway_token       TEXT        NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS user_platform       TEXT,
     ADD COLUMN IF NOT EXISTS user_llm_model      TEXT,
-    ADD COLUMN IF NOT EXISTS user_api_key        TEXT        NOT NULL DEFAULT '',
-    ADD COLUMN IF NOT EXISTS user_tool_use_model TEXT;
+    ADD COLUMN IF NOT EXISTS user_api_key        TEXT        NOT NULL DEFAULT '';
 
 UPDATE user_instances
 SET gateway_token = gen_random_uuid()::text
@@ -105,3 +104,7 @@ CREATE INDEX IF NOT EXISTS password_reset_tokens_user_expires_idx
 ALTER TABLE user_instances
     ADD COLUMN IF NOT EXISTS yax_connected    BOOLEAN     NOT NULL DEFAULT false,
     ADD COLUMN IF NOT EXISTS yax_connected_at TIMESTAMPTZ;
+
+-- Single-model mode: tool-use model is no longer configured separately.
+ALTER TABLE user_instances
+    DROP COLUMN IF EXISTS user_tool_use_model;

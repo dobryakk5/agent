@@ -29,6 +29,8 @@ from docker_manager import (
 from google_oauth import GoogleOAuthConfigError, build_auth_url, exchange_code_for_tokens, get_google_userinfo
 from yandex_oauth import YandexOAuthConfigError, build_yandex_auth_url, exchange_yandex_code
 from metrics import auto_stop_loop, collect_metrics_loop
+from instance_service import apply_admin_settings_to_all_instances
+from settings_store import DEFAULT_LLM_MODEL, DEFAULT_PLATFORM, get_settings, write_settings
 from telegram_gateway import (
     TelegramGatewayConfigError,
     consume_telegram_link_token,
@@ -157,27 +159,65 @@ async def admin_dashboard():
 
 class ProvisionRequest(BaseModel):
     user_id: int
-    platform: str
+    platform: str = ""
     api_key: str = ""
-    llm_model: str
+    llm_model: str = ""
     telegram_bot_token: str = ""
+
+
+class SettingsRequest(BaseModel):
+    platform: str
+    llm_model: str
 
 
 class UpdateModelRequest(BaseModel):
     llm_model: str
 
 
+@app.get("/settings")
+async def settings_get(request: Request, admin=Depends(get_admin_user)):
+    settings = await get_settings(request.app.state.pool)
+    return {
+        "platform": settings.get("platform") or DEFAULT_PLATFORM,
+        "llm_model": settings.get("llm_model") or DEFAULT_LLM_MODEL,
+    }
+
+
+@app.post("/settings")
+async def settings_update(req: SettingsRequest, request: Request, admin=Depends(get_admin_user)):
+    platform = req.platform.strip() or DEFAULT_PLATFORM
+    llm_model = req.llm_model.strip() or DEFAULT_LLM_MODEL
+
+    if platform not in PLATFORMS:
+        raise HTTPException(status_code=400, detail=f"Unknown platform. Use one of: {sorted(PLATFORMS)}")
+    if not llm_model:
+        raise HTTPException(status_code=400, detail="Model is required")
+
+    return await write_settings(request.app.state.pool, platform, llm_model)
+
+
+@app.post("/settings/apply")
+async def settings_apply(request: Request, admin=Depends(get_admin_user)):
+    return await apply_admin_settings_to_all_instances(request.app.state.pool)
+
+
 @app.post("/provision")
 async def provision(req: ProvisionRequest, request: Request, admin=Depends(get_admin_user)):
-    if req.platform not in PLATFORMS:
-        raise HTTPException(status_code=400, detail=f"Unknown platform. Use one of: {sorted(PLATFORMS)}")
-
     pool = request.app.state.pool
+    settings = await get_settings(pool)
+    platform = (req.platform or settings.get("platform") or DEFAULT_PLATFORM).strip()
+    llm_model = (req.llm_model or settings.get("llm_model") or DEFAULT_LLM_MODEL).strip()
+
+    if platform not in PLATFORMS:
+        raise HTTPException(status_code=400, detail=f"Unknown platform. Use one of: {sorted(PLATFORMS)}")
+    if not llm_model:
+        raise HTTPException(status_code=400, detail="Model is required")
+
     existing = await pool.fetchrow("SELECT user_id, status FROM user_instances WHERE user_id = $1", req.user_id)
     if existing:
         raise HTTPException(status_code=409, detail="Instance already exists")
 
-    resolved_api_key = resolve_api_key(req.platform, req.api_key)
+    resolved_api_key = resolve_api_key(platform, req.api_key)
     gateway_token = generate_gateway_token()
 
     loop = asyncio.get_event_loop()
@@ -185,9 +225,9 @@ async def provision(req: ProvisionRequest, request: Request, admin=Depends(get_a
         None,
         lambda: create_instance(
             user_id=req.user_id,
-            platform=req.platform,
+            platform=platform,
             api_key=resolved_api_key,
-            llm_model=req.llm_model,
+            llm_model=llm_model,
             gateway_token=gateway_token,
         ),
     )
@@ -206,8 +246,8 @@ async def provision(req: ProvisionRequest, request: Request, admin=Depends(get_a
         result["secrets_volume_name"],
         gateway_token,
         resolved_api_key,
-        req.platform,
-        req.llm_model,
+        platform,
+        llm_model,
     )
     return result
 

@@ -1,3 +1,7 @@
+DEFAULT_PLATFORM = "openrouter"
+DEFAULT_LLM_MODEL = "openrouter/free"
+
+
 async def ensure_settings_defaults(pool) -> None:
     await pool.execute(
         """
@@ -6,6 +10,25 @@ async def ensure_settings_defaults(pool) -> None:
             value TEXT NOT NULL
         )
         """
+    )
+    await pool.execute(
+        """
+        INSERT INTO settings (key, value)
+        VALUES ('platform', $1)
+        ON CONFLICT (key) DO NOTHING
+        """,
+        DEFAULT_PLATFORM,
+    )
+    await pool.execute(
+        """
+        INSERT INTO settings (key, value)
+        VALUES ('llm_model', $1)
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+        WHERE settings.value IS NULL
+           OR settings.value = ''
+           OR settings.value IN ('nvidia/nemotron-3-super-120b-a12b:free', 'openrouter/nvidia/nemotron-3-super-120b-a12b:free')
+        """,
+        DEFAULT_LLM_MODEL,
     )
 
 

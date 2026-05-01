@@ -14,7 +14,7 @@ CREATE TABLE settings (
 
 INSERT INTO settings (key, value) VALUES ('platform', 'openrouter')
     ON CONFLICT (key) DO NOTHING;
-INSERT INTO settings (key, value) VALUES ('llm_model', 'nvidia/nemotron-3-super-120b-a12b:free')
+INSERT INTO settings (key, value) VALUES ('llm_model', 'openrouter/free')
     ON CONFLICT (key) DO NOTHING;
 
 -- Инстансы агентов
@@ -33,7 +33,6 @@ CREATE TABLE user_instances (
     user_platform       TEXT,
     user_llm_model      TEXT,
     user_api_key        TEXT NOT NULL DEFAULT '',
-    user_tool_use_model TEXT,
     status              TEXT NOT NULL DEFAULT 'creating',
     google_connected    BOOLEAN     NOT NULL DEFAULT false,
     google_connected_at TIMESTAMPTZ,
