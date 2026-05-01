@@ -35,7 +35,7 @@ export "${ENV_KEY}=${API_KEY}"
 # regardless of what characters they contain.
 # Google Workspace plugin patch is done in the same pass.
 python3 - <<'PY'
-import json, os, sys
+import json, os
 
 platform           = os.environ["PLATFORM"]
 api_key            = os.environ["API_KEY"]
@@ -88,14 +88,29 @@ cfg = {
         "headless": True,
         "noSandbox": True,
     },
-    "plugins": {"allow": [], "entries": {}},
-    "tools":   {"allow": []},
+
+    # Do not set plugins.allow here. A restrictive plugins.allow list blocks
+    # bundled plugins unless every required plugin is explicitly listed.
+    # In particular, browser.enabled=true is not enough if plugins.allow
+    # excludes the bundled browser plugin.
+    "plugins": {
+        "entries": {
+            "browser": {"enabled": True},
+        }
+    },
+    "tools": {
+        "alsoAllow": ["browser"],
+    },
+    "skills": {
+        "entries": {
+            "browser-automation": {"enabled": True},
+        }
+    },
 }
 
 if os.path.isfile(google_oauth_path):
     plugin_name = "openclaw-google-workspace"
-    cfg["plugins"]["allow"].append(plugin_name)
-    cfg["tools"]["allow"].append(plugin_name)
+    cfg["tools"].setdefault("alsoAllow", []).append(plugin_name)
     cfg["plugins"]["entries"][plugin_name] = {
         "enabled": True,
         "config": {
@@ -115,6 +130,7 @@ echo "[entrypoint] Provider env key: $ENV_KEY"
 echo "[entrypoint] HTTP Responses enabled: yes"
 echo "[entrypoint] Native Telegram channel: disabled"
 echo "[entrypoint] Google OAuth config mounted: $( [ -f "$GOOGLE_OAUTH_JSON_PATH" ] && echo yes || echo no )"
+echo "[entrypoint] Browser plugin: enabled"
 echo "[entrypoint] Config written to $CONFIG_FILE"
 
 if [ ! -f "$AGENTS_FILE" ]; then
@@ -163,6 +179,17 @@ cat > "$MEMORY_FILE" <<'EOF'
 EOF
 fi
 
+BROWSER_POLICY_MARKER="## Browser Automation Policy"
+if ! grep -q "$BROWSER_POLICY_MARKER" "$AGENTS_FILE" 2>/dev/null; then
+cat >> "$AGENTS_FILE" <<'EOF'
+
+## Browser Automation Policy
+- The browser-automation skill and browser tool are available in this environment.
+- If the user explicitly asks to open, view, check, inspect, parse, or analyze a public website or URL, treat that request as consent to start and use the browser runtime. Do not ask for a second confirmation before ordinary navigation, reading, screenshots, or extraction.
+- Ask for confirmation before logging in, submitting forms, making purchases, sending messages, uploading/downloading files, changing account settings, or performing destructive/private actions.
+- When browser work is requested, use the browser tool directly. Do not answer with internal SKILL.md paths, skill diagnostics, or configuration instructions unless the browser tool is genuinely unavailable after trying.
+EOF
+fi
 
 # ── Yandex 360 (yax) ─────────────────────────────────────────────────────────
 YAX_TOKEN_SRC="/run/secrets/user/yax-token.json"

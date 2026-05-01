@@ -664,7 +664,7 @@
 
     <div style="display:flex; gap:8px">
       <button class="btn-sm" onclick="saveLLMSettings()" id="llm-save-btn">Сохранить</button>
-      <button class="btn-ghost" style="font-size:12px" onclick="resetLLMSettings()">Базовая модель</button>
+      <button class="btn-ghost" style="font-size:12px" onclick="resetLLMSettings()" id="llm-reset-btn">Базовая модель</button>
     </div>
   </div>
 </div>
@@ -688,6 +688,7 @@
 let token = localStorage.getItem('token');
 let userId = null;
 let statusData = null;
+let llmSaveInFlight = false;
 
 // ── Init ───────────────────────────────────────────────────────────────────
 (async function init() {
@@ -978,8 +979,84 @@ function toggleLLMForm() {
   form.style.display = form.style.display === 'none' ? '' : 'none';
 }
 
+function cloneStatusData() {
+  return statusData ? JSON.parse(JSON.stringify(statusData)) : null;
+}
+
+function renderAllCabinetBlocks() {
+  renderStatus();
+  renderLLMCard();
+  renderFeatures();
+}
+
+function setLLMSavingState(isSaving) {
+  const saveBtn = document.getElementById('llm-save-btn');
+  const resetBtn = document.getElementById('llm-reset-btn');
+
+  if (saveBtn) {
+    saveBtn.disabled = isSaving;
+    saveBtn.textContent = isSaving ? 'Применяю…' : 'Сохранить';
+  }
+  if (resetBtn) {
+    resetBtn.disabled = isSaving;
+  }
+}
+
+function applyOptimisticLLMMode(mode, payload) {
+  if (!statusData?.instance) return;
+
+  const inst = statusData.instance;
+  if (mode === 'custom') {
+    inst.user_platform = payload.platform;
+    inst.user_llm_model = payload.llm_model;
+    inst.has_custom_api_key = Boolean(payload.api_key || inst.has_custom_api_key);
+    inst.model_mode = 'custom';
+  } else {
+    inst.user_platform = null;
+    inst.user_llm_model = null;
+    inst.has_custom_api_key = false;
+    inst.model_mode = 'base';
+  }
+
+  renderLLMCard();
+  document.getElementById('llm-form').style.display = 'none';
+}
+
+function rollbackOptimisticLLMMode(snapshot) {
+  if (!snapshot) return;
+  statusData = snapshot;
+  renderAllCabinetBlocks();
+}
+
+async function persistLLMSettingsOptimistically(mode, payload, successMessage) {
+  if (llmSaveInFlight) {
+    toast('Изменение модели уже применяется', 'error');
+    return;
+  }
+
+  const snapshot = cloneStatusData();
+  llmSaveInFlight = true;
+  setLLMSavingState(true);
+  applyOptimisticLLMMode(mode, payload);
+  toast(successMessage, 'success');
+
+  try {
+    await api('POST', '/cabinet/llm', payload);
+    try {
+      await loadStatus();
+    } catch (statusError) {
+      console.error('loadStatus after llm save error', statusError);
+    }
+  } catch (e) {
+    rollbackOptimisticLLMMode(snapshot);
+    toast('Не удалось сохранить модель: ' + e.message, 'error');
+  } finally {
+    llmSaveInFlight = false;
+    setLLMSavingState(false);
+  }
+}
+
 async function saveLLMSettings() {
-  const btn = document.getElementById('llm-save-btn');
   const mode = document.querySelector('input[name="llm-mode"]:checked')?.value || 'base';
   const platform = document.getElementById('llm-platform').value || 'openrouter';
   const llm_model = document.getElementById('llm-model-input').value.trim();
@@ -998,30 +1075,19 @@ async function saveLLMSettings() {
     payload = { platform, llm_model, api_key };
   }
 
-  btn.disabled = true;
-  btn.textContent = 'Сохраняю…';
-  try {
-    await api('POST', '/cabinet/llm', payload);
-    await loadStatus();
-    document.getElementById('llm-form').style.display = 'none';
-    toast(mode === 'custom' ? 'Особенная модель сохранена' : 'Выбрана базовая модель', 'success');
-  } catch (e) {
-    toast(e.message, 'error');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Сохранить';
-  }
+  await persistLLMSettingsOptimistically(
+    mode,
+    payload,
+    mode === 'custom' ? 'Особенная модель выбрана' : 'Выбрана базовая модель'
+  );
 }
 
 async function resetLLMSettings() {
-  try {
-    await api('POST', '/cabinet/llm', { platform: '', llm_model: '', api_key: '' });
-    await loadStatus();
-    document.getElementById('llm-form').style.display = 'none';
-    toast('Выбрана базовая модель', 'success');
-  } catch (e) {
-    toast(e.message, 'error');
-  }
+  await persistLLMSettingsOptimistically(
+    'base',
+    { platform: '', llm_model: '', api_key: '' },
+    'Выбрана базовая модель'
+  );
 }
 
 async function toggleAgent() {
