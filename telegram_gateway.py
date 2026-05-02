@@ -29,6 +29,8 @@ class TelegramGatewayConfigError(RuntimeError):
 
 _INSTANCE_LOCKS: dict[int, asyncio.Lock] = {}
 _INSTANCE_LOCKS_GUARD = asyncio.Lock()
+_QUEUE_PROCESS_LOCK = asyncio.Lock()
+
 
 
 async def get_instance_lock(user_id: int) -> asyncio.Lock:
@@ -360,58 +362,70 @@ async def telegram_update_worker_loop(pool) -> None:
 
 
 async def process_telegram_update_queue(pool, limit: int = 5) -> int:
-    rows = await pool.fetch(
-        """
-        WITH picked AS (
-            SELECT id
-            FROM telegram_updates
-            WHERE (
-                    status IN ('pending', 'retry')
-                    AND next_attempt_at <= now()
-                )
-                OR (
-                    status = 'locked'
-                    AND locked_at < now() - interval '5 minutes'
-                )
-                OR (
-                    status IN (
-                        'checking_agent', 'starting_agent', 'waiting_gateway',
-                        'sending_to_agent', 'waiting_agent_response',
-                        'sending_to_telegram'
+    """Process queued Telegram updates.
+
+    The webhook may nudge this function while the background worker is also
+    running. Keep only one queue processor active per uvicorn process so that
+    intermediate statuses such as waiting_gateway / waiting_agent_response do
+    not get re-picked by another task.
+    """
+    if _QUEUE_PROCESS_LOCK.locked():
+        return 0
+
+    async with _QUEUE_PROCESS_LOCK:
+        rows = await pool.fetch(
+            """
+            WITH picked AS (
+                SELECT id
+                FROM telegram_updates
+                WHERE (
+                        status IN ('pending', 'retry')
+                        AND next_attempt_at <= now()
                     )
-                    AND updated_at < now() - interval '15 minutes'
-                )
-            ORDER BY id
-            FOR UPDATE SKIP LOCKED
-            LIMIT $1
-        )
-        UPDATE telegram_updates u
-        SET status = 'locked',
-            locked_at = now(),
-            updated_at = now()
-        FROM picked
-        WHERE u.id = picked.id
-        RETURNING u.*
-        """,
-        limit,
-    )
-
-    for row in rows:
-        try:
-            await _handle_telegram_update_row(pool, dict(row))
-        except RetryTelegramUpdate as exc:
-            await _schedule_retry(pool, dict(row), exc)
-        except PermanentTelegramUpdateError as exc:
-            await _fail_update(pool, dict(row), str(exc))
-        except Exception as exc:  # noqa: BLE001
-            await _schedule_retry(
-                pool,
-                dict(row),
-                RetryTelegramUpdate(str(exc), retry_delay_seconds=60),
+                    OR (
+                        status = 'locked'
+                        AND locked_at < now() - interval '2 minutes'
+                    )
+                    OR (
+                        status IN (
+                            'checking_agent', 'starting_agent', 'waiting_gateway',
+                            'sending_to_agent', 'waiting_agent_response',
+                            'sending_to_telegram'
+                        )
+                        AND updated_at < now() - interval '2 minutes'
+                    )
+                ORDER BY id
+                FOR UPDATE SKIP LOCKED
+                LIMIT $1
             )
+            UPDATE telegram_updates u
+            SET status = 'locked',
+                locked_at = now(),
+                updated_at = now()
+            FROM picked
+            WHERE u.id = picked.id
+            RETURNING u.*
+            """,
+            limit,
+        )
 
-    return len(rows)
+        processed = 0
+        for row in rows:
+            processed += 1
+            try:
+                await _handle_telegram_update_row(pool, dict(row))
+            except RetryTelegramUpdate as exc:
+                await _schedule_retry(pool, dict(row), exc)
+            except PermanentTelegramUpdateError as exc:
+                await _fail_update(pool, dict(row), str(exc))
+            except Exception as exc:  # noqa: BLE001
+                await _schedule_retry(
+                    pool,
+                    dict(row),
+                    RetryTelegramUpdate(str(exc), retry_delay_seconds=60),
+                )
 
+        return processed
 
 async def _set_update_status(pool, update_id: int, status: str, **fields: Any) -> None:
     allowed = {
@@ -801,14 +815,22 @@ async def _deliver_text_to_agent(
         }
 
         await _set_update_status(pool, int(row["id"]), "waiting_agent_response")
-        async with httpx.AsyncClient(timeout=180) as client:
-            r = await client.post(
-                f"http://{ip}:18789/v1/responses",
-                headers=headers,
-                json=body,
-            )
-            r.raise_for_status()
-            data = r.json()
+        try:
+            async with httpx.AsyncClient(timeout=180) as client:
+                r = await client.post(
+                    f"http://{ip}:18789/v1/responses",
+                    headers=headers,
+                    json=body,
+                )
+                r.raise_for_status()
+                data = r.json()
+        except httpx.TimeoutException as exc:
+            raise RetryTelegramUpdate(
+                "Agent response timeout",
+                retry_delay_seconds=60,
+                user_message="Агент получил сообщение, но долго не возвращает ответ. Сообщение сохранено, попробую ещё раз.",
+                notify_flag="agent_slow_message_sent",
+            ) from exc
 
         response_text = extract_output_text(data) or "Не удалось извлечь текст ответа от ассистента."
         await _set_update_status(
@@ -852,6 +874,31 @@ async def _handle_telegram_update_row(pool, row: dict[str, Any]) -> None:
 
     if chat.get("type") != "private":
         await _set_update_status(pool, int(row["id"]), "ignored")
+        return
+
+    # If uvicorn was restarted while an HTTP request to the agent was in-flight,
+    # the row may be recovered later as waiting_agent_response. We cannot recover
+    # the lost HTTP response from memory; first try to send a stored response if
+    # one exists, otherwise give the user a clear answer instead of leaving the
+    # row stuck silently.
+    if (
+        row.get("status") == "waiting_agent_response"
+        and row.get("sent_to_agent_at")
+        and not row.get("agent_response_text")
+        and not row.get("telegram_response_at")
+    ):
+        await send_telegram_text(
+            chat_id,
+            "Сообщение было отправлено агенту, но ответ не был получен. Повторите запрос, пожалуйста.",
+            reply_to_message_id,
+        )
+        await _set_update_status(
+            pool,
+            int(row["id"]),
+            "failed",
+            telegram_response_at=datetime.now(timezone.utc),
+            last_error="Agent response was not recovered after backend restart or timeout",
+        )
         return
 
     if row.get("agent_response_text") and not row.get("telegram_response_at"):
