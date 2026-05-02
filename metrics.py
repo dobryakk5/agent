@@ -1,6 +1,7 @@
 import asyncio
 import asyncpg
 from docker_manager import get_raw_stats
+from runtime_state import refresh_instance_runtime_state_safe
 
 COLLECT_INTERVAL = 30  # секунд
 AUTO_STOP_IDLE_MINUTES = int(__import__("os").environ.get("AUTO_STOP_IDLE_MINUTES", "60"))
@@ -115,6 +116,7 @@ async def auto_stop_loop(db_url: str):
                             "UPDATE user_instances SET status='stopped', stopped_at=now() WHERE user_id=$1",
                             row["user_id"],
                         )
+                        await refresh_instance_runtime_state_safe(conn, row["user_id"], gateway_state="stopped")
                     print(f"[auto_stop] stopped idle instance for user {row['user_id']}")
                 except Exception as e:
                     print(f"[auto_stop] error stopping user {row['user_id']}: {e}")

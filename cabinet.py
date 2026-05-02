@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse
 from auth import get_current_user
 from docker_manager import recreate_container, stop_instance
 from instance_service import PLATFORMS, resolve_api_key, sync_instance_to_admin_settings
+from runtime_state import refresh_instance_runtime_state_safe
 from pydantic import BaseModel
 from settings_store import get_settings
 from telegram_gateway import (
@@ -168,6 +169,7 @@ async def agent_stop(request: Request, user=Depends(get_current_user)):
         "UPDATE user_instances SET status='stopped', stopped_at=now() WHERE user_id=$1",
         user["user_id"],
     )
+    await refresh_instance_runtime_state_safe(pool, user["user_id"], gateway_state="stopped")
     return {"ok": True}
 
 
@@ -185,6 +187,7 @@ async def agent_start(request: Request, user=Depends(get_current_user)):
         return {"ok": True, "message": "Already running"}
 
     result = await sync_instance_to_admin_settings(pool, user["user_id"], force_status="running")
+    await refresh_instance_runtime_state_safe(pool, user["user_id"], gateway_state="starting")
     return {"ok": True, **result}
 
 
@@ -196,6 +199,7 @@ async def agent_restart(request: Request, user=Depends(get_current_user)):
         user["user_id"],
         force_status="running",
     )
+    await refresh_instance_runtime_state_safe(pool, user["user_id"], gateway_state="starting")
     return {"ok": True, **result}
 
 
@@ -226,6 +230,11 @@ async def agent_update_image(request: Request, user=Depends(get_current_user)):
         pool,
         user["user_id"],
         force_status=target_status,
+    )
+    await refresh_instance_runtime_state_safe(
+        pool,
+        user["user_id"],
+        gateway_state="stopped" if target_status == "stopped" else "starting",
     )
 
     return {
@@ -324,6 +333,11 @@ async def cabinet_update_llm(
         effective_model,
         target_status,
         user["user_id"],
+    )
+    await refresh_instance_runtime_state_safe(
+        pool,
+        user["user_id"],
+        gateway_state="stopped" if target_status == "stopped" else "starting",
     )
 
     return {

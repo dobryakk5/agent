@@ -81,6 +81,80 @@ CREATE TABLE telegram_links (
 CREATE INDEX ON telegram_links (telegram_user_id);
 CREATE INDEX ON telegram_links (last_seen_at DESC);
 
+
+-- Очередь входящих Telegram updates.
+-- Webhook сначала пишет сюда, а backend worker уже доставляет сообщение в Docker/OpenClaw.
+CREATE TABLE telegram_updates (
+    id BIGSERIAL PRIMARY KEY,
+
+    telegram_update_id BIGINT NOT NULL UNIQUE,
+    telegram_user_id BIGINT,
+    chat_id BIGINT,
+    message_id BIGINT,
+    text TEXT,
+
+    payload_json JSONB NOT NULL,
+
+    status TEXT NOT NULL DEFAULT 'pending',
+    -- pending | locked | checking_agent | starting_agent | waiting_gateway
+    -- sending_to_agent | waiting_agent_response | sending_to_telegram
+    -- done | retry | failed | rejected | ignored
+
+    user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    instance_id BIGINT REFERENCES user_instances(id) ON DELETE SET NULL,
+
+    attempts INT NOT NULL DEFAULT 0,
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    locked_at TIMESTAMPTZ,
+
+    agent_started_message_sent BOOLEAN NOT NULL DEFAULT false,
+    agent_slow_message_sent BOOLEAN NOT NULL DEFAULT false,
+    agent_unavailable_message_sent BOOLEAN NOT NULL DEFAULT false,
+    admin_check_message_sent BOOLEAN NOT NULL DEFAULT false,
+
+    sent_to_agent_at TIMESTAMPTZ,
+    agent_response_at TIMESTAMPTZ,
+    telegram_response_at TIMESTAMPTZ,
+
+    agent_response_text TEXT,
+    last_error TEXT,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX ON telegram_updates (status, next_attempt_at);
+CREATE INDEX ON telegram_updates (telegram_user_id, created_at DESC);
+CREATE INDEX ON telegram_updates (user_id, created_at DESC);
+CREATE INDEX ON telegram_updates (created_at DESC);
+
+-- Последнее известное runtime-состояние пользовательского контейнера.
+CREATE TABLE instance_runtime_state (
+    user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+
+    container_name TEXT,
+    container_id TEXT,
+
+    docker_exists BOOLEAN NOT NULL DEFAULT false,
+    docker_state TEXT NOT NULL DEFAULT 'unknown',
+    docker_started BOOLEAN NOT NULL DEFAULT false,
+    docker_has_ip BOOLEAN NOT NULL DEFAULT false,
+    docker_ip TEXT,
+
+    gateway_state TEXT NOT NULL DEFAULT 'unknown',
+    gateway_ready BOOLEAN NOT NULL DEFAULT false,
+
+    last_checked_at TIMESTAMPTZ,
+    last_started_at TIMESTAMPTZ,
+    last_ready_at TIMESTAMPTZ,
+    last_error TEXT,
+
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX ON instance_runtime_state (docker_state);
+CREATE INDEX ON instance_runtime_state (gateway_state);
+
 -- Токены сброса пароля
 CREATE TABLE password_reset_tokens (
     token      TEXT PRIMARY KEY,

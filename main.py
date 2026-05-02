@@ -30,18 +30,15 @@ from google_oauth import GoogleOAuthConfigError, build_auth_url, exchange_code_f
 from yandex_oauth import YandexOAuthConfigError, build_yandex_auth_url, exchange_yandex_code
 from metrics import auto_stop_loop, collect_metrics_loop
 from instance_service import apply_admin_settings_to_all_instances
+from runtime_state import refresh_instance_runtime_state_safe
 from settings_store import DEFAULT_LLM_MODEL, DEFAULT_PLATFORM, get_settings, write_settings
 from telegram_gateway import (
     TelegramGatewayConfigError,
-    consume_telegram_link_token,
-    find_user_by_telegram_id,
     get_telegram_webhook_info,
-    route_telegram_message_to_instance,
-    send_telegram_text,
+    process_telegram_update_queue,
+    save_telegram_update,
     set_telegram_webhook,
-    unlink_telegram_account,
-    update_telegram_presence,
-    upsert_telegram_link,
+    telegram_update_worker_loop,
     verify_telegram_secret,
 )
 
@@ -128,10 +125,11 @@ async def lifespan(app: FastAPI):
     app.state.pool = await asyncpg.create_pool(DB_URL)
     app.state.metrics_task = asyncio.create_task(collect_metrics_loop(DB_URL))
     app.state.auto_stop_task = asyncio.create_task(auto_stop_loop(DB_URL))
+    app.state.telegram_worker_task = asyncio.create_task(telegram_update_worker_loop(app.state.pool))
     try:
         yield
     finally:
-        for task_name in ("metrics_task", "auto_stop_task"):
+        for task_name in ("metrics_task", "auto_stop_task", "telegram_worker_task"):
             task = getattr(app.state, task_name, None)
             if task:
                 task.cancel()
@@ -249,6 +247,7 @@ async def provision(req: ProvisionRequest, request: Request, admin=Depends(get_a
         platform,
         llm_model,
     )
+    await refresh_instance_runtime_state_safe(pool, req.user_id, gateway_state="starting")
     return result
 
 
@@ -285,6 +284,7 @@ async def update_model(user_id: int, req: UpdateModelRequest, request: Request, 
         req.llm_model,
         user_id,
     )
+    await refresh_instance_runtime_state_safe(pool, user_id, gateway_state="starting")
     return result
 
 
@@ -297,6 +297,7 @@ async def stop(user_id: int, request: Request, admin=Depends(get_admin_user)):
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, lambda: stop_instance(user_id))
     await pool.execute("UPDATE user_instances SET status = 'stopped', stopped_at = now() WHERE user_id = $1", user_id)
+    await refresh_instance_runtime_state_safe(pool, user_id, gateway_state="stopped")
     return {"ok": True}
 
 
@@ -308,6 +309,7 @@ async def remove(user_id: int, request: Request, admin=Depends(get_admin_user)):
         raise HTTPException(status_code=404, detail="Instance not found")
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, lambda: remove_instance(user_id))
+    await refresh_instance_runtime_state_safe(pool, user_id, gateway_state="removed")
     await pool.execute("DELETE FROM user_instances WHERE user_id = $1", user_id)
     await pool.execute("DELETE FROM telegram_links WHERE user_id = $1", user_id)
     return {"ok": True}
@@ -567,95 +569,19 @@ async def telegram_webhook(
         raise HTTPException(status_code=401, detail="Invalid Telegram webhook secret")
 
     update = await request.json()
-    # Process in the background so Telegram gets 200 OK immediately.
-    # Without this, the webhook handler could block for up to 225 s
-    # (45 s container readiness wait + 180 s agent response), causing
-    # Telegram to retry and deliver the same message multiple times.
-    asyncio.create_task(_process_telegram_update(request.app.state.pool, update))
-    return {"ok": True}
 
+    # Durable flow:
+    # 1) save update to PostgreSQL first;
+    # 2) return 200 OK to Telegram quickly;
+    # 3) process it from the DB queue in telegram_update_worker_loop.
+    result = await save_telegram_update(request.app.state.pool, update)
 
-async def _process_telegram_update(pool, update: dict) -> None:
-    try:
-        await _handle_telegram_update(pool, update)
-    except Exception as exc:
-        print(f"[telegram] unhandled error in background update handler: {exc}")
+    # Nudge the queue immediately; the persistent worker will also pick it up
+    # after restart or on the next polling tick.
+    if result.get("stored"):
+        asyncio.create_task(process_telegram_update_queue(request.app.state.pool, limit=3))
 
-
-async def _handle_telegram_update(pool, update: dict) -> None:
-    message = update.get("message") or update.get("edited_message")
-    if not message:
-        return
-
-    chat = message.get("chat") or {}
-    sender = message.get("from") or {}
-    text = (message.get("text") or "").strip()
-    chat_id = int(chat.get("id") or 0)
-    telegram_user_id = int(sender.get("id") or 0)
-    reply_to_message_id = message.get("message_id")
-
-    if chat.get("type") != "private":
-        return
-
-    if text.startswith("/start"):
-        arg = text.split(maxsplit=1)[1].strip() if len(text.split(maxsplit=1)) > 1 else ""
-        if arg.startswith("link_"):
-            token = arg[5:]
-            try:
-                user_id = await consume_telegram_link_token(pool, token)
-                await upsert_telegram_link(pool, user_id, message)
-                await send_telegram_text(chat_id, "Telegram успешно привязан к вашему ассистенту.", reply_to_message_id)
-            except HTTPException:
-                await send_telegram_text(chat_id, "Ссылка привязки недействительна или уже использована.", reply_to_message_id)
-            except Exception as exc:
-                print(f"[telegram] error during link: {exc}")
-        else:
-            try:
-                await send_telegram_text(chat_id, "Бот активен. Для привязки откройте личный кабинет и нажмите «Подключить Telegram».", reply_to_message_id)
-            except Exception as exc:
-                print(f"[telegram] error sending start message: {exc}")
-        return
-
-    if not telegram_user_id:
-        return
-
-    link = await find_user_by_telegram_id(pool, telegram_user_id)
-    if not link:
-        try:
-            await send_telegram_text(chat_id, "Этот Telegram ещё не привязан. Откройте личный кабинет и подключите Telegram.", reply_to_message_id)
-        except Exception as exc:
-            print(f"[telegram] error sending unlinked message: {exc}")
-        return
-
-    await update_telegram_presence(pool, telegram_user_id, message)
-    if not text:
-        try:
-            await send_telegram_text(chat_id, "Пока обрабатываю только текстовые сообщения.", reply_to_message_id)
-        except Exception as exc:
-            print(f"[telegram] error sending non-text message: {exc}")
-        return
-
-    session_key = f"telegram:{telegram_user_id}:chat:{chat_id}"
-    try:
-        response_text = await route_telegram_message_to_instance(
-            pool,
-            int(link["user_id"]),
-            text,
-            session_key,
-            loading_chat_id=chat_id,
-            loading_reply_to_message_id=reply_to_message_id,
-)
-    except Exception as exc:  # noqa: BLE001
-        try:
-            await send_telegram_text(chat_id, f"Ошибка при обращении к контейнеру: {exc}", reply_to_message_id)
-        except Exception:
-            pass
-        return
-
-    try:
-        await send_telegram_text(chat_id, response_text, reply_to_message_id)
-    except Exception as exc:
-        print(f"[telegram] error sending response to user {telegram_user_id}: {exc}")
+    return {"ok": True, "queued": bool(result.get("stored")), "status": result.get("status")}
 
 
 @app.post("/telegram/webhook/setup")

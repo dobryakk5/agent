@@ -249,32 +249,85 @@ def create_instance(
         "container_id": container.short_id,
     }
 
+def is_docker_available() -> tuple[bool, str | None]:
+    """Return whether Docker daemon is reachable from the backend process."""
+    try:
+        client.ping()
+        return True, None
+    except Exception as exc:  # noqa: BLE001
+        return False, str(exc)
+
+
 def get_container_state(user_id: int) -> dict:
+    """Inspect one user's agent container and return explicit runtime flags."""
     container_name = _get_container_name(user_id)
+    network_name = _get_network_name(user_id)
+
+    docker_available, docker_error = is_docker_available()
+    if not docker_available:
+        return {
+            "docker_available": False,
+            "exists": False,
+            "container_name": container_name,
+            "container_id": None,
+            "status": "docker_unavailable",
+            "running": False,
+            "has_ip": False,
+            "ip": None,
+            "error": docker_error,
+        }
 
     try:
         c = client.containers.get(container_name)
         c.reload()
 
+        networks = c.attrs.get("NetworkSettings", {}).get("Networks", {}) or {}
+        net = networks.get(network_name) or (next(iter(networks.values()), None) if networks else None)
+        ip = (net or {}).get("IPAddress") or None
+
         return {
+            "docker_available": True,
             "exists": True,
             "container_name": container_name,
+            "container_id": c.short_id,
             "status": c.status,
             "running": c.status == "running",
-            "container_id": c.short_id,
+            "has_ip": bool(ip),
+            "ip": ip,
+            "error": None,
         }
     except docker.errors.NotFound:
         return {
+            "docker_available": True,
             "exists": False,
             "container_name": container_name,
+            "container_id": None,
             "status": "missing",
             "running": False,
+            "has_ip": False,
+            "ip": None,
+            "error": None,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "docker_available": True,
+            "exists": False,
+            "container_name": container_name,
             "container_id": None,
+            "status": "error",
+            "running": False,
+            "has_ip": False,
+            "ip": None,
+            "error": str(exc),
         }
 
 
 def ensure_container_started(user_id: int) -> dict:
     container_name = _get_container_name(user_id)
+
+    docker_available, docker_error = is_docker_available()
+    if not docker_available:
+        raise RuntimeError(f"Docker daemon is unavailable: {docker_error}")
 
     try:
         c = client.containers.get(container_name)
@@ -287,12 +340,8 @@ def ensure_container_started(user_id: int) -> dict:
         c.start()
         c.reload()
 
-    return {
-        "container_name": container_name,
-        "status": c.status,
-        "running": c.status == "running",
-        "container_id": c.short_id,
-    }
+    return get_container_state(user_id)
+
 
 def stop_instance(user_id: int):
     try:
@@ -311,26 +360,6 @@ def start_instance(user_id: int):
     except docker.errors.NotFound:
         raise RuntimeError(f"Container {container_name} not found — provision the instance first")
 
-def ensure_container_started(user_id: int) -> dict:
-    container_name = _get_container_name(user_id)
-
-    try:
-        c = client.containers.get(container_name)
-    except docker.errors.NotFound:
-        raise RuntimeError(f"Container {container_name} not found — provision the instance first")
-
-    c.reload()
-
-    if c.status != "running":
-        c.start()
-        c.reload()
-
-    return {
-        "container_name": container_name,
-        "status": c.status,
-        "running": c.status == "running",
-        "container_id": c.short_id,
-    }
 
 def remove_instance(user_id: int):
     container_name = _get_container_name(user_id)

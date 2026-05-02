@@ -5,6 +5,7 @@ from fastapi import HTTPException
 
 from docker_manager import recreate_container, stop_instance
 from settings_store import get_settings
+from runtime_state import refresh_instance_runtime_state_safe
 
 PLATFORMS = {"anthropic", "openrouter", "openai"}
 PLATFORM_ENV_KEYS = {
@@ -88,6 +89,11 @@ async def sync_instance_to_admin_settings(
         llm_model,
         target_status,
         user_id,
+    )
+    await refresh_instance_runtime_state_safe(
+        pool,
+        user_id,
+        gateway_state="stopped" if target_status == "stopped" else "starting",
     )
 
     return {
