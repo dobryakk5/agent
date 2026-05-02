@@ -10,9 +10,8 @@ from urllib.parse import quote
 import httpx
 from fastapi import HTTPException
 
-from docker_manager import ensure_container_started
+from docker_manager import ensure_container_started, get_container_state
 from instance_service import sync_instance_to_admin_settings
-from runtime_state import record_instance_runtime_state, refresh_instance_runtime_state
 
 TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN", "") or "").strip()
 TELEGRAM_BOT_USERNAME = (os.getenv("TELEGRAM_BOT_USERNAME", "") or "").strip().lstrip("@")
@@ -314,42 +313,22 @@ def _extract_update_metadata(update: dict[str, Any]) -> dict[str, Any]:
 
 
 async def save_telegram_update(pool, update: dict[str, Any]) -> dict[str, Any]:
-    """Persist an incoming Telegram update before any slow Docker/OpenClaw work.
-
-    For already-linked Telegram users we resolve user_id immediately, so the
-    queue row is visibly owned by the target account before the worker starts.
-    /start link_... updates may legitimately have user_id = NULL until the
-    worker consumes the link token.
-    """
+    """Persist an incoming Telegram update before any slow Docker/OpenClaw work."""
     meta = _extract_update_metadata(update)
     if meta["telegram_update_id"] is None:
         # Telegram normally always provides update_id. Do not raise to Telegram;
         # just keep the webhook fast and observable in logs.
         return {"ok": False, "stored": False, "reason": "missing update_id"}
 
-    resolved_user_id = None
-    if meta["telegram_user_id"] is not None:
-        link = await pool.fetchrow(
-            "SELECT user_id FROM telegram_links WHERE telegram_user_id = $1",
-            meta["telegram_user_id"],
-        )
-        if link:
-            resolved_user_id = int(link["user_id"])
-
     row = await pool.fetchrow(
         """
         INSERT INTO telegram_updates (
             telegram_update_id, telegram_user_id, chat_id, message_id,
-            text, payload_json, status, user_id
+            text, payload_json, status
         )
-        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
-        ON CONFLICT (telegram_update_id) DO UPDATE
-        SET user_id = COALESCE(telegram_updates.user_id, EXCLUDED.user_id),
-            telegram_user_id = COALESCE(telegram_updates.telegram_user_id, EXCLUDED.telegram_user_id),
-            chat_id = COALESCE(telegram_updates.chat_id, EXCLUDED.chat_id),
-            message_id = COALESCE(telegram_updates.message_id, EXCLUDED.message_id),
-            updated_at = now()
-        RETURNING id, status, user_id, (xmax = 0) AS inserted
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+        ON CONFLICT (telegram_update_id) DO NOTHING
+        RETURNING id, status
         """,
         meta["telegram_update_id"],
         meta["telegram_user_id"],
@@ -358,14 +337,12 @@ async def save_telegram_update(pool, update: dict[str, Any]) -> dict[str, Any]:
         meta["text"],
         json.dumps(update, ensure_ascii=False),
         meta["initial_status"],
-        resolved_user_id,
     )
     return {
         "ok": True,
-        "stored": bool(row and row["inserted"]),
+        "stored": bool(row),
         "id": int(row["id"]) if row else None,
         "status": row["status"] if row else "duplicate",
-        "user_id": int(row["user_id"]) if row and row["user_id"] is not None else None,
     }
 
 
@@ -521,7 +498,7 @@ async def _schedule_retry(pool, row: dict[str, Any], exc: RetryTelegramUpdate) -
             attempts = attempts + 1,
             next_attempt_at = CASE
                 WHEN attempts + 1 >= $2 THEN next_attempt_at
-                ELSE now() + ($3::text || ' seconds')::interval
+                ELSE now() + ($3::int * interval '1 second')
             END,
             last_error = $4,
             updated_at = now()
@@ -530,7 +507,7 @@ async def _schedule_retry(pool, row: dict[str, Any], exc: RetryTelegramUpdate) -
         """,
         row["id"],
         TELEGRAM_UPDATE_MAX_ATTEMPTS,
-        int(exc.retry_delay_seconds),
+        max(5, int(exc.retry_delay_seconds)),
         str(exc),
     )
 
@@ -553,18 +530,68 @@ async def _record_runtime_state(
     gateway_ready: bool = False,
     last_error: str | None = None,
 ) -> None:
-    await record_instance_runtime_state(
-        pool,
+    await pool.execute(
+        """
+        INSERT INTO instance_runtime_state (
+            user_id, container_name, container_id,
+            docker_exists, docker_state, docker_started,
+            docker_has_ip, docker_ip,
+            gateway_state, gateway_ready,
+            last_checked_at, last_started_at, last_ready_at,
+            last_error, updated_at
+        )
+        VALUES (
+            $1, $2, $3,
+            $4, $5, $6,
+            $7, $8,
+            $9, $10,
+            now(),
+            CASE WHEN $6 THEN now() ELSE NULL END,
+            CASE WHEN $10 THEN now() ELSE NULL END,
+            $11,
+            now()
+        )
+        ON CONFLICT (user_id) DO UPDATE
+        SET container_name = EXCLUDED.container_name,
+            container_id = EXCLUDED.container_id,
+            docker_exists = EXCLUDED.docker_exists,
+            docker_state = EXCLUDED.docker_state,
+            docker_started = EXCLUDED.docker_started,
+            docker_has_ip = EXCLUDED.docker_has_ip,
+            docker_ip = EXCLUDED.docker_ip,
+            gateway_state = EXCLUDED.gateway_state,
+            gateway_ready = EXCLUDED.gateway_ready,
+            last_checked_at = now(),
+            last_started_at = CASE
+                WHEN EXCLUDED.docker_started THEN COALESCE(instance_runtime_state.last_started_at, now())
+                ELSE instance_runtime_state.last_started_at
+            END,
+            last_ready_at = CASE
+                WHEN EXCLUDED.gateway_ready THEN now()
+                ELSE instance_runtime_state.last_ready_at
+            END,
+            last_error = EXCLUDED.last_error,
+            updated_at = now()
+        """,
         user_id,
-        state,
-        gateway_state=gateway_state,
-        gateway_ready=gateway_ready,
-        last_error=last_error,
+        state.get("container_name"),
+        state.get("container_id"),
+        bool(state.get("exists")),
+        state.get("status") or "unknown",
+        bool(state.get("running")),
+        bool(state.get("has_ip")),
+        state.get("ip"),
+        gateway_state,
+        gateway_ready,
+        last_error or state.get("error"),
     )
 
 
 async def _inspect_container(pool, user_id: int, gateway_state: str = "not_checked") -> dict[str, Any]:
-    return await refresh_instance_runtime_state(pool, user_id, gateway_state=gateway_state)
+    loop = asyncio.get_running_loop()
+    state = await loop.run_in_executor(None, lambda: get_container_state(user_id))
+    await _record_runtime_state(pool, user_id, state, gateway_state=gateway_state, last_error=state.get("error"))
+    return state
 
 
 async def _ensure_container_ready_for_gateway(pool, row: dict[str, Any], user_id: int) -> dict[str, Any]:
